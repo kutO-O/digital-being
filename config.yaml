@@ -1,45 +1,57 @@
-# Digital Being Configuration
-
 system:
-  version: "0.22.0"  # Stage 22: TimePerception
+  version: "Stage 23 - Social Interaction Layer"
 
 ticks:
   light_tick_sec: 5
   heavy_tick_sec: 60
 
+memory:
+  episodic_db: "memory/episodes.db"
+  semantic_lance: "memory/semantic.lance"
+  max_episodes: 10000
+
 paths:
   state: "memory/state.json"
+  snapshots: "memory/snapshots"
   inbox: "inbox.txt"
   outbox: "outbox.txt"
-  snapshots: "snapshots"
 
 logging:
-  dir: "logs"
   level: "INFO"
-
-memory:
-  episodic_db: "memory/episodic.db"
-  semantic_lance: "memory/semantic_lance"
+  dir: "logs"
 
 ollama:
-  url: "http://localhost:11434"
+  base_url: "http://127.0.0.1:11434"
   strategy_model: "llama3.2:3b"
   embed_model: "nomic-embed-text"
-  timeout_sec: 15
+  timeout_sec: 30
+  max_calls_per_tick: 10
 
 scores:
+  exploration_base: 0.5
+  curiosity_base: 0.5
+  caution_base: 0.5
+  stability_base: 0.5
+  modes:
+    curious:
+      exploration_boost: 0.2
+      curiosity_boost: 0.2
+    cautious:
+      caution_boost: 0.2
+      stability_boost: 0.2
+    defensive:
+      caution_boost: 0.3
+      stability_boost: 0.3
+      exploration_penalty: -0.3
   drift:
-    snapshot_dir: "snapshots/values"
-    threshold: 0.15
+    snapshot_dir: "memory/value_snapshots"
+    check_interval_ticks: 168
+    drift_threshold: 0.3
 
 strategy:
-  daily_update_hours: 24
-  weekly_update_hours: 168
-  vector_update_hours: 720
-
-dream:
-  enabled: true
-  interval_hours: 6
+  weekly_update_hours: 24
+  max_now_goals: 5
+  max_weekly_goals: 3
 
 resources:
   budget:
@@ -50,12 +62,21 @@ api:
   host: "127.0.0.1"
   port: 8765
 
-reflection:
+dream:
   enabled: true
+  interval_hours: 6
+  insights_limit: 5
+  max_insights: 50
+
+emotions:
+  decay_rate: 0.1
+  min_threshold: 0.05
+
+reflection:
   every_n_ticks: 10
+  analyze_last_episodes: 15
 
 narrative:
-  enabled: true
   every_n_ticks: 15
 
 attention:
@@ -63,23 +84,61 @@ attention:
   top_k: 5
   min_score: 0.4
   max_context_chars: 1500
+  focus_weights:
+    urgency: 0.3
+    relevance: 0.3
+    emotion: 0.2
+    novelty: 0.2
 
 curiosity:
   enabled: true
   ask_every_n_ticks: 20
-  answer_every_n_ticks: 10
+  answer_every_n_ticks: 15
+  max_questions: 100
 
 self_modification:
   enabled: true
   suggest_every_n_ticks: 50
+  auto_approve_threshold: 0.8
+  max_history: 50
+
+beliefs:
+  enabled: true
+  form_every_n_ticks: 25
+  validate_every_n_ticks: 30
+  confidence_threshold: 0.5
+  max_beliefs: 100
+
+contradictions:
+  enabled: true
+  detect_every_n_ticks: 40
+  resolve_every_n_ticks: 35
+  max_contradictions: 50
 
 shell:
   enabled: true
-  allowed_dir: "."
+  allowed_dir: "sandbox"
   max_output_chars: 2000
+  timeout_sec: 10
+  allowed_commands:
+    - "ls"
+    - "cat"
+    - "pwd"
+    - "echo"
+    - "date"
+    - "wc"
+    - "head"
+    - "tail"
+    - "grep"
 
-# Stage 22: Time Perception
 time_perception:
   enabled: true
   max_patterns: 50
   min_confidence: 0.4
+  detect_every_n_ticks: 40
+
+# Stage 23
+social:
+  enabled: true
+  check_inbox_every_tick: true
+  initiate_after_ticks: 200
