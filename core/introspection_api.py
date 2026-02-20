@@ -1,9 +1,9 @@
 """
 Digital Being — IntrospectionAPI
-Stage 15: /status now includes goal_stats; goal_persistence added to components.
+Stage 16: /status now includes attention_focus; attention_system added to components.
 
 Endpoints (all GET, all return JSON unless noted):
-  /status      — uptime, tick_count, mode, current goal, goal_stats [Stage 15]
+  /status      — uptime, tick_count, mode, current goal, goal_stats, attention_focus [Stage 16]
   /memory      — episode count, vector count, recent episodes
   /values      — scores, mode, conflicts
   /strategy    — three planning horizons
@@ -36,6 +36,7 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
+    from core.attention_system import AttentionSystem
     from core.dream_mode import DreamMode
     from core.emotion_engine import EmotionEngine
     from core.goal_persistence import GoalPersistence
@@ -159,14 +160,19 @@ class IntrospectionAPI:
                 "interrupted":     False,
             }
 
+            # Stage 16: attention focus summary
+            attn = self._c.get("attention_system")
+            attention_focus = attn.get_focus_summary() if attn is not None else ""
+
             payload = {
-                "uptime_seconds": int(time.time() - self._start_time),
-                "tick_count":     heavy._tick_count if heavy else 0,
-                "current_mode":   values.get_mode(),
-                "current_goal":   now_goal.get("goal", ""),
-                "action_type":    now_goal.get("action_type", ""),
-                "last_tick_at":   now_goal.get("created_at", ""),
-                "goal_stats":     goal_stats,   # Stage 15
+                "uptime_seconds":  int(time.time() - self._start_time),
+                "tick_count":      heavy._tick_count if heavy else 0,
+                "current_mode":    values.get_mode(),
+                "current_goal":    now_goal.get("goal", ""),
+                "action_type":     now_goal.get("action_type", ""),
+                "last_tick_at":    now_goal.get("created_at", ""),
+                "goal_stats":      goal_stats,      # Stage 15
+                "attention_focus": attention_focus, # Stage 16
             }
             return self._json(payload)
         except Exception as e:

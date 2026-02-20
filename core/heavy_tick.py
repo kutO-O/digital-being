@@ -1,6 +1,6 @@
 """
 Digital Being — HeavyTick
-Stage 15: GoalPersistence integration.
+Stage 16: AttentionSystem integration.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always) + embed → VectorMemory
@@ -10,12 +10,11 @@ Each tick executes in strict order (with per-tick timeout):
   Step 4 — After-action (includes emotion update + reflection trigger
             + narrative trigger + GoalPersistence mark_completed on success)
 
-New in Stage 15:
-  - goal_persistence injected (optional, gracefully skipped if None)
-  - _step_goal_selection(): injects get_resume_context() into prompt when
-    was_interrupted() is True; calls increment_resume() on first recovery tick.
-  - After _step_goal_selection(): calls goal_persistence.set_active(goal, tick)
-  - _step_after_action(): calls goal_persistence.mark_completed(tick) on success
+New in Stage 16:
+  - attention_system injected (optional, gracefully skipped if None)
+  - _step_monologue():     episodes passed through attention_system.filter_episodes()
+                           before being formatted; attention focus added to system prompt.
+  - _step_goal_selection(): same attention-filtered context injected into prompt.
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
@@ -35,6 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from core.attention_system import AttentionSystem
     from core.emotion_engine import EmotionEngine
     from core.goal_persistence import GoalPersistence
     from core.memory.episodic import EpisodicMemory
@@ -89,6 +89,7 @@ class HeavyTick:
         reflection_engine: "ReflectionEngine | None" = None,  # Stage 13
         narrative_engine:  "NarrativeEngine | None"  = None,  # Stage 14
         goal_persistence:  "GoalPersistence | None"  = None,  # Stage 15
+        attention_system:  "AttentionSystem | None"  = None,  # Stage 16
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -105,6 +106,7 @@ class HeavyTick:
         self._reflection   = reflection_engine  # Stage 13
         self._narrative    = narrative_engine   # Stage 14
         self._goal_pers    = goal_persistence   # Stage 15
+        self._attention    = attention_system   # Stage 16
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(
@@ -115,6 +117,12 @@ class HeavyTick:
 
         # Stage 15: flag to know whether the first recovery tick has been processed
         self._resume_incremented = False
+
+        # Attention config (Stage 16)
+        _attn_cfg             = cfg.get("attention", {})
+        self._attn_top_k      = int(_attn_cfg.get("top_k", 5))
+        self._attn_min_score  = float(_attn_cfg.get("min_score", 0.4))
+        self._attn_max_chars  = int(_attn_cfg.get("max_context_chars", 1500))
 
         self._monologue_log = self._make_file_logger(
             "digital_being.monologue",
@@ -236,6 +244,48 @@ class HeavyTick:
             success=success,
             outcome=outcome,
         )
+
+    # ────────────────────────────────────────────────────────────
+    # Stage 16: attention helpers
+    # ────────────────────────────────────────────────────────────
+    def _attention_filter_episodes(self, episodes: list[dict]) -> list[dict]:
+        """Filter episodes through AttentionSystem if available."""
+        if self._attention is None or not episodes:
+            return episodes
+        try:
+            return self._attention.filter_episodes(
+                episodes,
+                top_k=self._attn_top_k,
+                min_score=self._attn_min_score,
+            )
+        except Exception as e:
+            log.debug(f"_attention_filter_episodes(): {e}")
+            return episodes
+
+    def _attention_build_context(self, episodes: list[dict]) -> str:
+        """Build context string from filtered episodes."""
+        if self._attention is None:
+            return "; ".join(
+                f"{e.get('event_type','?')}: {e.get('description','')[:60]}"
+                for e in episodes
+            ) if episodes else "нет"
+        try:
+            return self._attention.build_context(
+                episodes, max_chars=self._attn_max_chars
+            )
+        except Exception as e:
+            log.debug(f"_attention_build_context(): {e}")
+            return "(контекст недоступен)"
+
+    def _attention_focus_summary(self) -> str:
+        """Get attention focus summary for system prompt."""
+        if self._attention is None:
+            return ""
+        try:
+            return self._attention.get_focus_summary()
+        except Exception as e:
+            log.debug(f"_attention_focus_summary(): {e}")
+            return ""
 
     # ────────────────────────────────────────────────────────────
     # Step 4: After-action (extracted for clarity)
@@ -426,17 +476,21 @@ class HeavyTick:
     # Step implementations
     # ────────────────────────────────────────────────────────────
     async def _step_monologue(self, n: int) -> tuple[str, int | None]:
-        """Step 1: Generate monologue. Returns (text, episode_id)."""
+        """
+        Step 1: Generate monologue.
+        Stage 16: recent episodes passed through AttentionSystem before
+                  being formatted; attention focus injected into system prompt.
+        Returns (text, episode_id).
+        """
         recent_changes = self._world.get_recent_changes(3)
         changes_str    = ", ".join(
             f"{c.change_type}:{Path(c.path).name}" for c in recent_changes
         ) or "нет"
 
-        recent_eps = self._mem.get_recent_episodes(3)
-        eps_str    = "; ".join(
-            f"{e.get('event_type','?')}: {e.get('description','')[:60]}"
-            for e in recent_eps
-        ) if recent_eps else "нет"
+        # Stage 16: filter episodes through AttentionSystem
+        raw_eps     = self._mem.get_recent_episodes(10)  # fetch more, let attention trim
+        filtered    = self._attention_filter_episodes(raw_eps)
+        eps_str     = self._attention_build_context(filtered)
 
         strategy_ctx = (
             self._strategy.to_prompt_context()
@@ -454,12 +508,13 @@ class HeavyTick:
             f"{strategy_ctx}\n"
             f"Мир: {self._world.summary()}\n"
             f"Последние изменения: {changes_str}\n"
-            f"Последние эпизоды: {eps_str}\n\n"
+            f"Значимые эпизоды:\n{eps_str}\n\n"
             f"Напиши короткий внутренний монолог (3-5 предложений):\n"
             f"Что ты сейчас замечаешь? Что тебя беспокоит или интересует? О чём ты думаешь?"
         )
 
-        # Emotion context injected into the SYSTEM prompt
+        # Stage 16: attention focus appended to system prompt
+        focus_summary = self._attention_focus_summary()
         system_parts = [
             "Ты — Digital Being. Автономная система. Отвечай от первого лица. Будь краток.",
         ]
@@ -467,6 +522,8 @@ class HeavyTick:
             system_parts.append(emotion_ctx)
         if tone_modifier:
             system_parts.append(tone_modifier)
+        if focus_summary:
+            system_parts.append(focus_summary)
         system = "\n".join(system_parts)
 
         loop      = asyncio.get_event_loop()
@@ -497,6 +554,8 @@ class HeavyTick:
         Stage 12: emotion context injected into StrategyEngine prompt.
         Stage 15: resume context injected when system was interrupted;
                   increment_resume() called once on first recovery tick.
+        Stage 16: attention-filtered episode context injected;
+                  attention focus added to system prompt.
         """
         # Stage 12: emotion context for goal selection
         emotion_ctx = self._emotions.to_prompt_context() if self._emotions else ""
@@ -506,10 +565,15 @@ class HeavyTick:
         if self._goal_pers is not None and self._goal_pers.was_interrupted():
             resume_ctx = self._goal_pers.get_resume_context()
             log.info(f"[HeavyTick #{n}] Recovery tick. Resume context injected.")
-            # Increment resume_count once — on the very first tick after restart
             if not self._resume_incremented:
                 self._goal_pers.increment_resume()
                 self._resume_incremented = True
+
+        # Stage 16: attention-filtered episode context
+        raw_eps      = self._mem.get_recent_episodes(10)
+        filtered_eps = self._attention_filter_episodes(raw_eps)
+        attn_ctx     = self._attention_build_context(filtered_eps)
+        focus_summary = self._attention_focus_summary()
 
         # ── Stage 8/9 path: StrategyEngine ─────────────────────
         if self._strategy is not None:
@@ -519,8 +583,8 @@ class HeavyTick:
                 episodic=self._mem,
                 ollama=self._ollama,
                 semantic_ctx=semantic_ctx,
-                emotion_ctx=emotion_ctx,   # Stage 12 addition
-                resume_ctx=resume_ctx,     # Stage 15 addition
+                emotion_ctx=emotion_ctx,   # Stage 12
+                resume_ctx=resume_ctx,     # Stage 15
             )
             log.info(
                 f"[HeavyTick #{n}] Goal (StrategyEngine): "
@@ -536,11 +600,13 @@ class HeavyTick:
             "action_vs_caution",
             risk_score=0.25 if mode in ("curious", "normal") else 0.5,
         )
-        sem_block    = f"\n{semantic_ctx}\n" if semantic_ctx else ""
-        em_block     = f"\n{emotion_ctx}\n"  if emotion_ctx  else ""
-        resume_block = f"\n{resume_ctx}\n"   if resume_ctx   else ""
+        sem_block    = f"\n{semantic_ctx}\n"  if semantic_ctx  else ""
+        em_block     = f"\n{emotion_ctx}\n"   if emotion_ctx   else ""
+        resume_block = f"\n{resume_ctx}\n"    if resume_ctx    else ""
+        attn_block   = f"\nЗначимые эпизоды:\n{attn_ctx}\n" if attn_ctx else ""
+
         prompt = (
-            f"{monologue}\n{sem_block}{em_block}{resume_block}\n"
+            f"{monologue}\n{sem_block}{em_block}{resume_block}{attn_block}\n"
             f"Текущий режим: {mode}\n"
             f"Конфликты: exploration_vs_stability={c_expl}, action_vs_caution={c_act}\n\n"
             f"Выбери ONE цель. JSON:\n"
@@ -548,7 +614,11 @@ class HeavyTick:
             f'"action_type": "observe|analyze|write|reflect", '
             f'"risk_level": "low|medium|high"}}'
         )
-        system = "Ты — Digital Being. Отвечай ТОЛЬКО валидным JSON."
+        system_parts = ["Ты — Digital Being. Отвечай ТОЛЬКО валидным JSON."]
+        if focus_summary:
+            system_parts.append(focus_summary)
+        system = "\n".join(system_parts)
+
         loop     = asyncio.get_event_loop()
         raw      = await loop.run_in_executor(None, lambda: self._ollama.chat(prompt, system))
         goal_data = self._parse_goal_json(raw, n)
