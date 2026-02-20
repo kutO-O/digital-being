@@ -27,6 +27,7 @@ log = logging.getLogger("digital_being.meta_cognition")
 MAX_INSIGHTS = 30
 MAX_DECISION_LOG = 100
 IMPACT_SCORES = {"low": 0.5, "medium": 1.0, "high": 1.5}
+HIGH_CONFIDENCE_THRESHOLD = 0.75  # reasoning_quality > 0.75 = high confidence
 
 
 class MetaCognition:
@@ -194,7 +195,6 @@ class MetaCognition:
         self,
         insight_type: str,
         description: str,
-        evidence: list[int],
         confidence: float,
         impact: str,
     ) -> None:
@@ -231,7 +231,6 @@ class MetaCognition:
             "id": str(uuid.uuid4()),
             "insight_type": insight_type,
             "description": description,
-            "evidence": evidence,
             "discovered_at": time.time(),
             "confidence": confidence,
             "impact": impact,
@@ -269,6 +268,7 @@ class MetaCognition:
     ) -> None:
         """
         Log a decision with quality metrics.
+        Tracks high-confidence decisions for calibration.
         Max 100 entries, removes oldest.
         """
         entry = {
@@ -281,6 +281,13 @@ class MetaCognition:
         }
 
         self._state["decision_quality_log"].append(entry)
+
+        # Update calibration metrics for high-confidence decisions
+        if reasoning_quality > HIGH_CONFIDENCE_THRESHOLD:
+            if outcome_match:
+                self._state["cognitive_metrics"]["high_confidence_correct"] += 1
+            else:
+                self._state["cognitive_metrics"]["high_confidence_wrong"] += 1
 
         # Prune if exceeded max
         if len(self._state["decision_quality_log"]) > MAX_DECISION_LOG:
