@@ -1,9 +1,9 @@
 # Digital Being — System Configuration
-# Stage 16: attention section added
+# Stage 18: self-modification section added + reflection, narrative, curiosity
 
 system:
   name: "digital_being"
-  version: "0.16.0"
+  version: "0.18.0"
   debug: false
 
 ticks:
@@ -13,6 +13,17 @@ ticks:
 dream:
   enabled: true
   interval_hours: 6
+
+reflection:
+  every_n_ticks: 10
+
+narrative:
+  every_n_ticks: 15
+
+curiosity:
+  enabled: true
+  ask_every_n_ticks: 5
+  max_open_questions: 10
 
 api:
   host: "127.0.0.1"
