@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 21: ShellExecutor integrated.
+Stage 22: TimePerception integrated.
 """
 
 from __future__ import annotations
@@ -35,8 +35,9 @@ from core.ollama_client import OllamaClient
 from core.reflection_engine import ReflectionEngine
 from core.self_model import SelfModel
 from core.self_modification import SelfModificationEngine
-from core.shell_executor import ShellExecutor  # Stage 21
+from core.shell_executor import ShellExecutor
 from core.strategy_engine import StrategyEngine
+from core.time_perception import TimePerception  # Stage 22
 from core.value_engine import ValueEngine
 from core.world_model import WorldModel
 
@@ -329,7 +330,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     contr_stats = contradiction_resolver.get_stats()
     logger.info(f"ContradictionResolver ready. pending={contr_stats['pending']} resolved={contr_stats['resolved']} total_detected={contr_stats['total_detected']}")
 
-    # Stage 21: ShellExecutor
     shell_cfg = cfg.get("shell", {})
     shell_enabled = bool(shell_cfg.get("enabled", True))
     shell_executor = None
@@ -344,6 +344,18 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("ShellExecutor disabled.")
 
+    # Stage 22: TimePerception
+    time_perc_cfg = cfg.get("time_perception", {})
+    time_perc_enabled = bool(time_perc_cfg.get("enabled", True))
+    time_perc = None
+    if time_perc_enabled:
+        time_perc = TimePerception(memory_dir=ROOT_DIR / "memory")
+        time_perc.load()
+        time_stats = time_perc.get_stats()
+        logger.info(f"TimePerception ready. patterns={time_stats['total_patterns']} time_of_day={time_stats['current_time_of_day']}")
+    else:
+        logger.info("TimePerception disabled.")
+
     heavy = HeavyTick(
         cfg=cfg, ollama=ollama, world=world, values=values, self_model=self_model, mem=mem, milestones=milestones,
         log_dir=log_dir, sandbox_dir=ROOT_DIR / "sandbox", strategy=strategy, vector_memory=vector_mem,
@@ -353,7 +365,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         self_modification=self_modification,
         belief_system=belief_system,
         contradiction_resolver=contradiction_resolver,
-        shell_executor=shell_executor,  # Stage 21
+        shell_executor=shell_executor,
+        time_perception=time_perc,  # Stage 22
     )
 
     ticker = LightTick(cfg=cfg, bus=bus)
@@ -371,7 +384,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "curiosity_engine": curiosity_engine, "self_modification": self_modification,
             "belief_system": belief_system,
             "contradiction_resolver": contradiction_resolver,
-            "shell_executor": shell_executor,  # Stage 21
+            "shell_executor": shell_executor,
+            "time_perception": time_perc,  # Stage 22
         },
         start_time=start_time,
     )
@@ -403,6 +417,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if shell_executor:
         shell_stats = shell_executor.get_stats()
         logger.info(f"  ShellExec    : executed={shell_stats['total_executed']} rejected={shell_stats['total_rejected']}")
+    if time_perc:
+        time_stats = time_perc.get_stats()
+        logger.info(f"  TimePerc     : patterns={time_stats['total_patterns']} time={time_stats['current_time_of_day']}")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
