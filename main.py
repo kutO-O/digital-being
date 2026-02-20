@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 22: TimePerception integrated.
+Stage 24: MetaCognition integrated.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from core.introspection_api import IntrospectionAPI
 from core.light_tick import LightTick
 from core.memory.episodic import EpisodicMemory
 from core.memory.vector_memory import VectorMemory
+from core.meta_cognition import MetaCognition  # Stage 24
 from core.milestones import Milestones
 from core.narrative_engine import NarrativeEngine
 from core.ollama_client import OllamaClient
@@ -36,6 +37,7 @@ from core.reflection_engine import ReflectionEngine
 from core.self_model import SelfModel
 from core.self_modification import SelfModificationEngine
 from core.shell_executor import ShellExecutor
+from core.social_layer import SocialLayer  # Stage 23
 from core.strategy_engine import StrategyEngine
 from core.time_perception import TimePerception  # Stage 22
 from core.value_engine import ValueEngine
@@ -356,6 +358,32 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("TimePerception disabled.")
 
+    # Stage 23: SocialLayer
+    social_cfg = cfg.get("social", {})
+    social_enabled = bool(social_cfg.get("enabled", True))
+    social_layer = None
+    if social_enabled:
+        inbox_path = ROOT_DIR / cfg["paths"]["inbox"]
+        outbox_path = ROOT_DIR / cfg["paths"]["outbox"]
+        social_layer = SocialLayer(inbox_path=inbox_path, outbox_path=outbox_path, memory_dir=ROOT_DIR / "memory")
+        social_layer.load()
+        social_stats = social_layer.get_stats()
+        logger.info(f"SocialLayer ready. incoming={social_stats['total_incoming']} outgoing={social_stats['total_outgoing']} pending={social_stats['pending_response']}")
+    else:
+        logger.info("SocialLayer disabled.")
+
+    # Stage 24: MetaCognition
+    meta_cog_cfg = cfg.get("meta_cognition", {})
+    meta_cog_enabled = bool(meta_cog_cfg.get("enabled", True))
+    meta_cog = None
+    if meta_cog_enabled:
+        meta_cog = MetaCognition(memory_dir=ROOT_DIR / "memory", config=meta_cog_cfg)
+        meta_cog.load()
+        meta_stats = meta_cog.get_stats()
+        logger.info(f"MetaCognition ready. insights={meta_stats['total_insights']} decisions_logged={meta_stats['total_decisions_logged']} calibration={meta_stats['calibration_score']:.2f}")
+    else:
+        logger.info("MetaCognition disabled.")
+
     heavy = HeavyTick(
         cfg=cfg, ollama=ollama, world=world, values=values, self_model=self_model, mem=mem, milestones=milestones,
         log_dir=log_dir, sandbox_dir=ROOT_DIR / "sandbox", strategy=strategy, vector_memory=vector_mem,
@@ -367,6 +395,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         contradiction_resolver=contradiction_resolver,
         shell_executor=shell_executor,
         time_perception=time_perc,  # Stage 22
+        social_layer=social_layer,  # Stage 23
+        meta_cognition=meta_cog,  # Stage 24
     )
 
     ticker = LightTick(cfg=cfg, bus=bus)
@@ -386,6 +416,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "contradiction_resolver": contradiction_resolver,
             "shell_executor": shell_executor,
             "time_perception": time_perc,  # Stage 22
+            "social_layer": social_layer,  # Stage 23
+            "meta_cognition": meta_cog,  # Stage 24
         },
         start_time=start_time,
     )
@@ -420,6 +452,12 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if time_perc:
         time_stats = time_perc.get_stats()
         logger.info(f"  TimePerc     : patterns={time_stats['total_patterns']} time={time_stats['current_time_of_day']}")
+    if social_layer:
+        social_stats = social_layer.get_stats()
+        logger.info(f"  SocialLayer  : incoming={social_stats['total_incoming']} outgoing={social_stats['total_outgoing']}")
+    if meta_cog:
+        meta_stats = meta_cog.get_stats()
+        logger.info(f"  MetaCog      : insights={meta_stats['total_insights']} calibration={meta_stats['calibration_score']:.2f}")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
