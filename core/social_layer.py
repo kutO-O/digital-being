@@ -7,6 +7,11 @@ The system can:
 - Respond in outbox.txt
 - Initiate conversations on its own (errors, emotions, questions, long silence)
 - Remember conversation history
+
+Fixed:
+- Removed world_model._mem direct access (encapsulation violation)
+- Removed useless last_message_ago_ticks from stats
+- Added get_stats(current_tick) parameter for proper calculation
 """
 
 from __future__ import annotations
@@ -22,8 +27,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.curiosity_engine import CuriosityEngine
     from core.emotion_engine import EmotionEngine
+    from core.memory.episodic import EpisodicMemory
     from core.ollama_client import OllamaClient
-    from core.world_model import WorldModel
 
 log = logging.getLogger("digital_being.social_layer")
 
@@ -219,22 +224,24 @@ class SocialLayer:
     def should_initiate(
         self,
         tick_count: int,
-        world_model: "WorldModel | None",
+        episodic_memory: "EpisodicMemory | None",
         emotion_engine: "EmotionEngine | None",
         curiosity_engine: "CuriosityEngine | None",
     ) -> tuple[bool, str]:
         """
         Decide if system should initiate conversation.
         Returns (should_write, reason).
+        
+        Fixed: Now takes episodic_memory directly instead of accessing world_model._mem
         """
         # Don't initiate if waiting for user response
         if self._state["pending_response"]:
             return False, ""
 
         # Check for critical errors (last 10 episodes)
-        if world_model and hasattr(world_model, "_mem"):
+        if episodic_memory:
             try:
-                recent = world_model._mem.get_recent_episodes(10)
+                recent = episodic_memory.get_recent_episodes(10)
                 for ep in recent:
                     if ep.get("outcome") == "error":
                         return True, "critical_error"
@@ -345,18 +352,25 @@ class SocialLayer:
         self._state["pending_response"] = False
         self._save()
 
-    def get_stats(self) -> dict:
-        """Get statistics."""
-        last_message_ago_ticks = 0
-        if self._state["messages"]:
-            last_msg = self._state["messages"][-1]
-            # Can't calculate ticks without current tick, return 0
-            last_message_ago_ticks = 0
-
-        return {
+    def get_stats(self, current_tick: int | None = None) -> dict:
+        """
+        Get statistics.
+        
+        Args:
+            current_tick: Current tick number for calculating ticks since last message.
+                         If None, ticks_since_last will be omitted from stats.
+        """
+        stats = {
             "total_incoming": self._state["total_incoming"],
             "total_outgoing": self._state["total_outgoing"],
             "pending_response": self._state["pending_response"],
-            "last_message_ago_ticks": last_message_ago_ticks,
             "total_messages": len(self._state["messages"]),
         }
+        
+        # Calculate ticks since last message if current_tick provided
+        if current_tick is not None and self._state["messages"]:
+            last_msg = self._state["messages"][-1]
+            last_tick = last_msg.get("tick", 0)
+            stats["ticks_since_last"] = current_tick - last_tick
+        
+        return stats
