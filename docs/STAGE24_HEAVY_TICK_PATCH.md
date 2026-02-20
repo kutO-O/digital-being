@@ -113,11 +113,11 @@ async def _step_meta_cognition(self, n: int) -> None:
                     )
                 )
                 
+                # Add insights (signature: insight_type, description, confidence, impact)
                 for ins in insights[:2]:
                     self._meta_cog.add_insight(
                         ins["insight_type"],
                         ins["description"],
-                        [],  # evidence episode IDs can be added later
                         ins.get("confidence", 0.5),
                         ins.get("impact", "medium")
                     )
@@ -128,6 +128,8 @@ async def _step_meta_cognition(self, n: int) -> None:
         except Exception as e:
             log.error(f"[HeavyTick #{n}] MetaCognition error: {e}")
 ```
+
+**Note:** `add_insight()` signature changed — removed unused `evidence` parameter.
 
 ---
 
@@ -217,6 +219,19 @@ context = "\n".join(parts)
 
 ---
 
+## Key Fix (Feb 21, 2026)
+
+✅ **Fixed calibration tracking:**
+- `log_decision()` now updates `high_confidence_correct` and `high_confidence_wrong`
+- Threshold: `reasoning_quality > 0.75` = high confidence
+- Calibration will now accurately reflect system's confidence estimation
+
+✅ **Removed unused `evidence` parameter:**
+- `add_insight()` signature: `(insight_type, description, confidence, impact)`
+- Simpler API, no unused tracking
+
+---
+
 ## Testing
 
 After making changes:
@@ -236,6 +251,11 @@ MetaCognition ready. insights=0 decisions_logged=0 calibration=0.50
 [HeavyTick #50] MetaCognition: reasoning=0.72, confusion=0.25
 [HeavyTick #50] MetaCognition: 1 insight(s) discovered.
 ```
+
+**Calibration will evolve:**
+- Initial: `0.50` (no data)
+- After decisions: `0.65 - 0.85` (good calibration)
+- Or: `0.3 - 0.5` (overconfident, needs adjustment)
 
 **API test:**
 ```bash
