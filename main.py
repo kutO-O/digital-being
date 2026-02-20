@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Phase 7: OllamaClient + HeavyTick. LightTick and HeavyTick run in parallel.
+Stage 8: StrategyEngine added. LightTick and HeavyTick run in parallel.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from core.memory.episodic import EpisodicMemory
 from core.milestones import Milestones
 from core.ollama_client import OllamaClient
 from core.self_model import SelfModel
+from core.strategy_engine import StrategyEngine
 from core.value_engine import ValueEngine
 from core.world_model import WorldModel
 
@@ -122,7 +123,6 @@ def make_memory_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
     async def on_user_urgent(data: dict) -> None:
         text = data.get("text", "")
         logger.warning(f"[EVENT] user.urgent ⚡ → '{text[:120]}'")
-        # TODO Phase 8: interrupt heavy tick on !URGENT
         mem.add_episode("urgent", text[:_MAX_DESC_LEN] or "(empty)",
                         data={"tick": data.get("tick")})
 
@@ -171,6 +171,28 @@ def make_self_handlers(self_model: SelfModel, mem: EpisodicMemory,
         logger.warning(f"[SelfModel] {msg}")
         mem.add_episode("self.drift_detected", msg[:_MAX_DESC_LEN])
     return {"self.drift_detected": on_self_drift_detected}
+
+
+def make_strategy_handlers(
+    milestones: Milestones,
+    mem: EpisodicMemory,
+    logger: logging.Logger,
+) -> dict:
+    """Stage 8: subscribe to strategy events."""
+    async def on_vector_changed(data: dict) -> None:
+        vector = data.get("vector", "")
+        logger.info(f"[StrategyEngine] Long-term vector changed: '{vector[:120]}'")
+        milestones.achieve(
+            "first_vector_change",
+            f"Долгосрочный вектор изменён: '{vector[:80]}'",
+        )
+        mem.add_episode(
+            "strategy.vector_changed",
+            f"Новый долгосрочный вектор: '{vector[:200]}'",
+            outcome="success",
+        )
+
+    return {"strategy.vector_changed": on_vector_changed}
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -244,7 +266,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     monitor = FileMonitor(watch_path=ROOT_DIR, bus=bus)
     monitor.start(loop)
 
-    # 10. HeavyTick
+    # Stage 8: StrategyEngine
+    strategy = StrategyEngine(memory_dir=ROOT_DIR / "memory", event_bus=bus)
+    strategy.load()
+
+    # Wire strategy events (after milestones are ready)
+    for event_name, handler in make_strategy_handlers(milestones, mem, logger).items():
+        bus.subscribe(event_name, handler)
+
+    # 10. HeavyTick (Stage 8: strategy injected)
     heavy = HeavyTick(
         cfg=cfg,
         ollama=ollama,
@@ -255,6 +285,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         milestones=milestones,
         log_dir=log_dir,
         sandbox_dir=ROOT_DIR / "sandbox",
+        strategy=strategy,
     )
 
     # 11. LightTick
@@ -274,6 +305,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  Self v{self_model.get_version():<3}  : {self_model.get_identity()['name']}")
     logger.info(f"  Principles : {len(self_model.get_principles())}")
     logger.info(f"  {milestones.summary()}")
+    logger.info(f"  Strategy   : {strategy.to_prompt_context()!r:.120}")
     logger.info(f"  Ollama     : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
