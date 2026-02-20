@@ -36,23 +36,23 @@ TIMES_OF_DAY = {
 
 
 class TimePerception:
-    def __init__(self, state_path: Path, max_patterns: int = MAX_PATTERNS, min_confidence: float = 0.4) -> None:
-        self._path = state_path
+    def __init__(self, memory_dir: Path, max_patterns: int = MAX_PATTERNS, min_confidence: float = 0.4) -> None:
+        self._path = memory_dir / "time_patterns.json"
         self._max_patterns = max_patterns
         self._min_confidence = min_confidence
-        self._state = self._load()
+        self._state = {"patterns": [], "current_context": self._build_context()}
 
-    def _load(self) -> dict:
+    def load(self) -> None:
+        """Load state from file."""
         if not self._path.exists():
-            return {
-                "patterns": [],
-                "current_context": self._build_context(),
-            }
+            log.info("TimePerception: no existing state, starting fresh.")
+            return
         try:
-            return json.loads(self._path.read_text(encoding="utf-8"))
+            self._state = json.loads(self._path.read_text(encoding="utf-8"))
+            log.info(f"TimePerception: loaded {len(self._state.get('patterns', []))} patterns.")
         except (json.JSONDecodeError, OSError) as e:
             log.error(f"Failed to load {self._path}: {e}")
-            return {"patterns": [], "current_context": self._build_context()}
+            self._state = {"patterns": [], "current_context": self._build_context()}
 
     def _save(self) -> None:
         try:
