@@ -1,9 +1,9 @@
 # Digital Being — System Configuration
-# Phase 1: File Structure + Basic Configs
+# Phase 2: Added inbox, outbox, snapshots paths
 
 system:
   name: "digital_being"
-  version: "0.1.0"
+  version: "0.2.0"
   debug: false
 
 ticks:
@@ -36,9 +36,12 @@ resources:
 logging:
   dir: "./logs"
   level: "INFO"
-  max_bytes: 5242880  # 5 MB
+  max_bytes: 5242880
   backup_count: 3
 
 paths:
   seed: "./seed.yaml"
   state: "./memory/state.json"
+  snapshots: "./memory/snapshots"
+  inbox: "./inbox.txt"
+  outbox: "./outbox.txt"

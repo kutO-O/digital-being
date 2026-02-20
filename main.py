@@ -1,10 +1,11 @@
 """
 Digital Being — Entry Point
-Phase 1: Config loading + system bootstrap
+Phase 2: EventBus + FileMonitor + LightTick + asyncio main loop.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import signal
@@ -13,6 +14,10 @@ import time
 from pathlib import Path
 
 import yaml
+
+from core.event_bus import EventBus
+from core.file_monitor import FileMonitor
+from core.light_tick import LightTick
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -24,7 +29,7 @@ SEED_PATH   = ROOT_DIR / "seed.yaml"
 
 
 # ────────────────────────────────────────────────────────────────────
-# Config loading
+# Config / logging
 # ────────────────────────────────────────────────────────────────────
 def load_yaml(path: Path) -> dict:
     if not path.exists():
@@ -39,50 +44,54 @@ def setup_logging(cfg: dict) -> logging.Logger:
 
     log_level = getattr(logging, cfg["logging"].get("level", "INFO").upper(), logging.INFO)
 
+    fmt = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+
+    # Root logger setup
     logging.basicConfig(
         level=log_level,
-        format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        format=fmt,
+        datefmt=datefmt,
         handlers=[
             logging.StreamHandler(sys.stdout),
             logging.FileHandler(log_dir / "digital_being.log", encoding="utf-8"),
         ],
     )
+
+    # Dedicated actions logger → logs/actions.log
+    actions_handler = logging.FileHandler(log_dir / "actions.log", encoding="utf-8")
+    actions_handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
+    logging.getLogger("digital_being.actions").addHandler(actions_handler)
+
     return logging.getLogger("digital_being")
 
 
 def ensure_directories(cfg: dict) -> None:
-    """Create required directories if they don't exist."""
     paths_to_create = [
         Path(cfg["memory"]["episodic_db"]).parent,
         Path(cfg["memory"]["semantic_lance"]).parent,
         Path(cfg["logging"]["dir"]),
         Path(cfg["paths"]["state"]).parent,
+        Path(cfg["paths"]["snapshots"]),
     ]
     for p in paths_to_create:
         p.mkdir(parents=True, exist_ok=True)
 
-
-# ────────────────────────────────────────────────────────────────────
-# Graceful shutdown
-# ────────────────────────────────────────────────────────────────────
-_shutdown_requested = False
-
-
-def _handle_signal(signum, frame):  # noqa: ANN001
-    global _shutdown_requested
-    _shutdown_requested = True
+    # Ensure inbox / outbox exist
+    for key in ("inbox", "outbox"):
+        p = Path(cfg["paths"][key])
+        if not p.exists():
+            p.touch()
 
 
 # ────────────────────────────────────────────────────────────────────
-# Bootstrap check
+# Bootstrap
 # ────────────────────────────────────────────────────────────────────
 def is_first_run(cfg: dict) -> bool:
     return not Path(cfg["paths"]["state"]).exists()
 
 
 def bootstrap_from_seed(seed: dict, cfg: dict, logger: logging.Logger) -> None:
-    """On first run, write initial state from seed.yaml."""
     identity = seed.get("identity", {})
     scores   = seed.get("scores", {})
     tasks    = seed.get("first_instructions", [])
@@ -109,48 +118,93 @@ def bootstrap_from_seed(seed: dict, cfg: dict, logger: logging.Logger) -> None:
 
 
 # ────────────────────────────────────────────────────────────────────
-# Tick loop (stub — Phase 2+)
+# Demo event handlers (Phase 2 — to be replaced in Phase 3+)
 # ────────────────────────────────────────────────────────────────────
-def run_loop(cfg: dict, logger: logging.Logger) -> None:
-    light_tick = cfg["ticks"]["light_tick_sec"]
-    heavy_tick = cfg["ticks"]["heavy_tick_sec"]
+async def on_user_message(data: dict) -> None:
+    logging.getLogger("digital_being").info(
+        f"[EVENT] user.message → '{data.get('text', '')[:120]}'"
+    )
 
-    tick_count      = 0
-    last_heavy_time = time.monotonic()
 
-    logger.info("Main loop started.")
-    logger.info(f"  light_tick={light_tick}s | heavy_tick={heavy_tick}s")
-    logger.info(f"  Resource budget: {cfg['resources']['budget']}")
+async def on_user_urgent(data: dict) -> None:
+    logging.getLogger("digital_being").warning(
+        f"[EVENT] user.urgent ⚡ → '{data.get('text', '')[:120]}'"
+    )
 
-    while not _shutdown_requested:
-        tick_start = time.monotonic()
-        tick_count += 1
 
-        # ── Light tick ──────────────────────────────────────────────
-        logger.debug(f"[TICK #{tick_count}] light tick")
-        # TODO Phase 2: score update, boredom decay, lightweight checks
+async def on_file_changed(data: dict) -> None:
+    logging.getLogger("digital_being").debug(
+        f"[EVENT] world.file_changed → {data.get('path')}"
+    )
 
-        # ── Heavy tick ──────────────────────────────────────────────
-        elapsed = tick_start - last_heavy_time
-        if elapsed >= heavy_tick:
-            last_heavy_time = tick_start
-            logger.info(f"[TICK #{tick_count}] heavy tick — elapsed since last: {elapsed:.1f}s")
-            # TODO Phase 2: goal evaluation, LLM strategy call, memory write
 
-        # ── Sleep until next light tick ─────────────────────────────
-        elapsed_this_tick = time.monotonic() - tick_start
-        time.sleep(max(0.0, light_tick - elapsed_this_tick))
+async def on_file_created(data: dict) -> None:
+    logging.getLogger("digital_being").debug(
+        f"[EVENT] world.file_created → {data.get('path')}"
+    )
 
-    logger.info("Shutdown signal received. Exiting cleanly.")
+
+async def on_file_deleted(data: dict) -> None:
+    logging.getLogger("digital_being").debug(
+        f"[EVENT] world.file_deleted → {data.get('path')}"
+    )
 
 
 # ────────────────────────────────────────────────────────────────────
-# Entry point
+# Async main
 # ────────────────────────────────────────────────────────────────────
+async def async_main(cfg: dict, logger: logging.Logger) -> None:
+    loop = asyncio.get_running_loop()
+
+    # 1. EventBus
+    bus = EventBus()
+
+    # 2. Wire up demo handlers
+    bus.subscribe("user.message",      on_user_message)
+    bus.subscribe("user.urgent",       on_user_urgent)
+    bus.subscribe("world.file_changed", on_file_changed)
+    bus.subscribe("world.file_created", on_file_created)
+    bus.subscribe("world.file_deleted", on_file_deleted)
+
+    # 3. FileMonitor (background thread)
+    monitor = FileMonitor(watch_path=ROOT_DIR, bus=bus)
+    monitor.start(loop)
+
+    # 4. LightTick (async task)
+    ticker = LightTick(cfg=cfg, bus=bus)
+    tick_task = asyncio.create_task(ticker.start(), name="light_tick")
+
+    logger.info("All subsystems started. Running... (Ctrl+C to stop)")
+
+    # 5. Run until cancelled (SIGINT/SIGTERM sets stop event)
+    stop_event = asyncio.Event()
+
+    def _signal_handler():
+        logger.info("Shutdown signal received.")
+        stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _signal_handler)
+        except NotImplementedError:
+            # Windows: asyncio signal handlers not fully supported — fallback
+            signal.signal(sig, lambda s, f: stop_event.set())
+
+    await stop_event.wait()
+
+    # 6. Graceful shutdown
+    ticker.stop()
+    monitor.stop()
+    tick_task.cancel()
+    try:
+        await tick_task
+    except asyncio.CancelledError:
+        pass
+
+    logger.info("Digital Being shut down cleanly.")
+
+
 def main() -> None:
-    signal.signal(signal.SIGINT,  _handle_signal)
-    signal.signal(signal.SIGTERM, _handle_signal)
-
     cfg  = load_yaml(CONFIG_PATH)
     seed = load_yaml(SEED_PATH)
 
@@ -173,7 +227,7 @@ def main() -> None:
     if anchors.get("locked"):
         logger.info(f"Anchor values LOCKED ({len(anchors.get('values', []))} rules).")
 
-    run_loop(cfg, logger)
+    asyncio.run(async_main(cfg, logger))
 
 
 if __name__ == "__main__":
