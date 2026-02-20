@@ -1,22 +1,24 @@
 """
 Digital Being — HeavyTick
-Stage 13: ReflectionEngine integration.
+Stage 14: NarrativeEngine integration.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always) + embed → VectorMemory
   Step 2 — Goal Selection      via StrategyEngine + semantic context
   Step 3 — Action
-  Step 4 — After-action (includes emotion update + reflection trigger)
+  Step 4 — After-action (includes emotion update + reflection trigger
+            + narrative trigger)
 
-New in Stage 13:
-  - reflection_engine injected (optional, gracefully skipped if None)
-  - _step_after_action(): calls reflection_engine.run() via run_in_executor
-    when should_run(tick_count) is True
+New in Stage 14:
+  - narrative_engine injected (optional, gracefully skipped if None)
+  - _step_after_action(): calls narrative_engine.run() via run_in_executor
+    when should_run(tick_count) is True (after reflection check)
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
   - embed() does NOT count against budget
   - Reflection adds 1 extra LLM call on reflection ticks (outside normal budget)
+  - Narrative adds 1 extra LLM call on narrative ticks (outside normal budget)
   - Max 30 s per tick (asyncio.wait_for)
 """
 
@@ -34,6 +36,7 @@ if TYPE_CHECKING:
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
+    from core.narrative_engine import NarrativeEngine
     from core.ollama_client import OllamaClient
     from core.reflection_engine import ReflectionEngine
     from core.self_model import SelfModel
@@ -80,6 +83,7 @@ class HeavyTick:
         vector_memory: "VectorMemory | None" = None,
         emotion_engine: "EmotionEngine | None" = None,
         reflection_engine: "ReflectionEngine | None" = None,  # Stage 13
+        narrative_engine:  "NarrativeEngine | None"  = None,  # Stage 14
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -94,6 +98,7 @@ class HeavyTick:
         self._vector_mem   = vector_memory
         self._emotions     = emotion_engine
         self._reflection   = reflection_engine  # Stage 13
+        self._narrative    = narrative_engine   # Stage 14
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(
@@ -270,6 +275,17 @@ class HeavyTick:
                 )
             except Exception as e:
                 log.error(f"[HeavyTick #{n}] ReflectionEngine.run() error: {e}")
+
+        # Stage 14: Narrative Engine trigger
+        if self._narrative is not None and self._narrative.should_run(n):
+            log.info(f"[HeavyTick #{n}] Triggering NarrativeEngine.")
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, lambda: self._narrative.run(n)
+                )
+            except Exception as e:
+                log.error(f"[HeavyTick #{n}] NarrativeEngine.run() error: {e}")
 
         # Weekly tasks
         if self._strategy is not None:

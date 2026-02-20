@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 13: ReflectionEngine added.
+Stage 14: NarrativeEngine added.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from core.light_tick import LightTick
 from core.memory.episodic import EpisodicMemory
 from core.memory.vector_memory import VectorMemory
 from core.milestones import Milestones
+from core.narrative_engine import NarrativeEngine
 from core.ollama_client import OllamaClient
 from core.reflection_engine import ReflectionEngine
 from core.self_model import SelfModel
@@ -228,6 +229,14 @@ def make_reflection_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dic
     return {"reflection.completed": on_reflection_completed}
 
 
+def make_narrative_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
+    """EventBus handlers for narrative events. Stage 14."""
+    async def on_narrative_entry_written(data: dict) -> None:
+        tick = data.get("tick", "?")
+        logger.info(f"[NarrativeEngine] Diary entry written at tick #{tick}.")
+    return {"narrative.entry_written": on_narrative_entry_written}
+
+
 # ────────────────────────────────────────────────────────────────────
 # Dream loop
 # ────────────────────────────────────────────────────────────────────
@@ -385,7 +394,27 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         f"Runs every {reflection_every} ticks."
     )
 
-    # 15. HeavyTick
+    # 15. NarrativeEngine  ← Stage 14
+    narrative_cfg   = cfg.get("narrative", {})
+    narrative_every = int(narrative_cfg.get("every_n_ticks", 15))
+    narrative_engine = NarrativeEngine(
+        episodic=mem,
+        emotion_engine=emotion_engine,
+        strategy_engine=strategy,
+        self_model=self_model,
+        ollama=ollama,
+        memory_dir=ROOT_DIR / "memory",
+        every_n_ticks=narrative_every,
+        event_bus=bus,
+    )
+    for event_name, handler in make_narrative_handlers(mem, logger).items():
+        bus.subscribe(event_name, handler)
+    logger.info(
+        f"NarrativeEngine ready. "
+        f"Writes diary every {narrative_every} ticks."
+    )
+
+    # 16. HeavyTick
     heavy = HeavyTick(
         cfg=cfg,
         ollama=ollama,
@@ -398,14 +427,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         sandbox_dir=ROOT_DIR / "sandbox",
         strategy=strategy,
         vector_memory=vector_mem,
-        emotion_engine=emotion_engine,      # Stage 12
+        emotion_engine=emotion_engine,       # Stage 12
         reflection_engine=reflection_engine, # Stage 13
+        narrative_engine=narrative_engine,   # Stage 14
     )
 
-    # 16. LightTick
+    # 17. LightTick
     ticker = LightTick(cfg=cfg, bus=bus)
 
-    # 17. IntrospectionAPI (Stage 11 + Stage 12: emotion_engine + Stage 13: reflection_engine)
+    # 18. IntrospectionAPI (Stage 11-14)
     api_cfg     = cfg.get("api", {})
     api_enabled = api_cfg.get("enabled", True)
     api = IntrospectionAPI(
@@ -423,20 +453,21 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "heavy_tick":         heavy,
             "emotion_engine":     emotion_engine,     # Stage 12
             "reflection_engine":  reflection_engine,  # Stage 13
+            "narrative_engine":   narrative_engine,   # Stage 14
         },
         start_time=start_time,
     )
     if api_enabled:
         await api.start()
 
-    # 18. Initial world scan
+    # 19. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode("world.scan",
                     f"Initial scan: {file_count} files",
                     outcome="success",
                     data={"file_count": file_count})
 
-    # 19. Startup banner
+    # 20. Startup banner
     logger.info("=" * 56)
     logger.info(f"  World        : {world.summary()}")
     logger.info(f"  Values       : {values.to_prompt_context()}")
@@ -448,12 +479,13 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  DreamMode    : {'enabled' if dream_enabled else 'disabled'}, interval={dream_interval}h")
     logger.info(f"  EmotionEngine: dominant={dominant_name}({dominant_val:.2f})")
     logger.info(f"  Reflection   : every {reflection_every} ticks")
+    logger.info(f"  Narrative    : every {narrative_every} ticks")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 20. Launch all tasks
+    # 21. Launch all tasks
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -476,7 +508,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     await stop_event.wait()
 
-    # 21. Graceful shutdown
+    # 22. Graceful shutdown
     ticker.stop()
     heavy.stop()
     monitor.stop()

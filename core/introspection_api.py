@@ -1,8 +1,8 @@
 """
 Digital Being — IntrospectionAPI
-Stage 13: /reflection endpoint added.
+Stage 14: /diary and /diary/raw endpoints added.
 
-Endpoints (all GET, all return JSON):
+Endpoints (all GET, all return JSON unless noted):
   /status      — uptime, tick_count, mode, current goal
   /memory      — episode count, vector count, recent episodes
   /values      — scores, mode, conflicts
@@ -13,6 +13,8 @@ Endpoints (all GET, all return JSON):
   /search      — semantic search via VectorMemory (?q=text&top_k=5)
   /emotions    — current emotional state, dominant emotion, tone modifier [Stage 12]
   /reflection  — last 5 reflections + total count [Stage 13]
+  /diary       — last N diary entries from narrative_log.json [Stage 14]
+  /diary/raw   — full diary.md as text/plain [Stage 14]
 
 Design rules:
   - Pure read — no mutations
@@ -39,6 +41,7 @@ if TYPE_CHECKING:
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
+    from core.narrative_engine import NarrativeEngine
     from core.ollama_client import OllamaClient
     from core.reflection_engine import ReflectionEngine
     from core.strategy_engine import StrategyEngine
@@ -104,6 +107,8 @@ class IntrospectionAPI:
         app.router.add_get("/search",     self._handle_search)
         app.router.add_get("/emotions",   self._handle_emotions)   # Stage 12
         app.router.add_get("/reflection", self._handle_reflection) # Stage 13
+        app.router.add_get("/diary",      self._handle_diary)      # Stage 14
+        app.router.add_get("/diary/raw",  self._handle_diary_raw)  # Stage 14
 
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -320,6 +325,53 @@ class IntrospectionAPI:
                 "last_reflections": last_5,
                 "total_count":      total,
             })
+        except Exception as e:
+            return self._error(e)
+
+    async def _handle_diary(self, request: web.Request) -> web.Response:
+        """GET /diary?limit=10 — Stage 14: last N diary entries."""
+        try:
+            ne = self._c.get("narrative_engine")
+            if ne is None:
+                return self._json({
+                    "entries": [],
+                    "total":   0,
+                    "note":    "NarrativeEngine not available",
+                })
+            limit   = min(int(request.rel_url.query.get("limit", 10)), 100)
+            records = ne.load_log()
+            total   = len(records)
+            entries = records[-limit:] if total > 0 else []
+            return self._json({"entries": entries, "total": total})
+        except Exception as e:
+            return self._error(e)
+
+    async def _handle_diary_raw(self, request: web.Request) -> web.Response:
+        """GET /diary/raw — Stage 14: return diary.md as text/plain."""
+        try:
+            ne = self._c.get("narrative_engine")
+            if ne is None:
+                return web.Response(
+                    text=json.dumps({"error": "NarrativeEngine not available"}),
+                    content_type="application/json",
+                    status=404,
+                    headers=_CORS_HEADERS,
+                )
+            diary_path = ne._diary_path
+            if not diary_path.exists():
+                return web.Response(
+                    text=json.dumps({"error": "diary not found"}),
+                    content_type="application/json",
+                    status=404,
+                    headers=_CORS_HEADERS,
+                )
+            content = diary_path.read_text(encoding="utf-8")
+            return web.Response(
+                text=content,
+                content_type="text/plain",
+                charset="utf-8",
+                headers=_CORS_HEADERS,
+            )
         except Exception as e:
             return self._error(e)
 
