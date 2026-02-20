@@ -4,6 +4,10 @@ Stage 21: Safe shell command execution with whitelist.
 
 Read-only commands: ls, cat, head, tail, wc, du, find, grep, date, pwd, whoami, echo
 Strict validation: path traversal protection, no pipes/redirects, allowed_dir restriction
+
+Note: Commands are executed with cwd=allowed_dir for security.
+This means relative paths in command output (e.g., 'ls .') are relative to allowed_dir,
+not the project root. This is expected behavior.
 """
 
 from __future__ import annotations
@@ -149,7 +153,12 @@ class ShellExecutor:
         return True, ""
 
     def execute(self, cmd: str) -> dict:
-        """Выполнить команду без валидации (используй execute_safe)."""
+        """
+        Выполнить команду без валидации (используй execute_safe).
+        
+        Note: Commands run with cwd=allowed_dir. Relative paths in output
+        are relative to allowed_dir, not project root.
+        """
         try:
             tokens = shlex.split(cmd)
             command = tokens[0]
@@ -162,7 +171,7 @@ class ShellExecutor:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd=str(self._allowed_dir),
+                cwd=str(self._allowed_dir),  # Security: always run from allowed_dir
             )
             execution_time_ms = int((time.monotonic() - start_time) * 1000)
             
@@ -231,7 +240,7 @@ class ShellExecutor:
                 },
             )
             
-            log.info(f"Shell command executed: {cmd[:80]} | exit_code={result['exit_code']}")
+            log.info(f"Shell command executed: {cmd[:80]} | exit_code={result['exit_code']} (cwd={self._allowed_dir})")
         else:
             self._stats["total_errors"] += 1
             self._save_stats()
