@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Phase 4: WorldModel integrated. Full scan on startup.
+Phase 5: ValueEngine integrated. Scores loaded from state.json.
 """
 
 from __future__ import annotations
@@ -20,12 +20,13 @@ from core.file_monitor import FileMonitor
 from core.light_tick import LightTick
 from core.memory.episodic import EpisodicMemory
 from core.world_model import WorldModel
+from core.value_engine import ValueEngine
 
 
 # ────────────────────────────────────────────────────────────────────
-ROOT_DIR    = Path(__file__).parent.resolve()
-CONFIG_PATH = ROOT_DIR / "config.yaml"
-SEED_PATH   = ROOT_DIR / "seed.yaml"
+ROOT_DIR      = Path(__file__).parent.resolve()
+CONFIG_PATH   = ROOT_DIR / "config.yaml"
+SEED_PATH     = ROOT_DIR / "seed.yaml"
 _MAX_DESC_LEN = 1000
 
 
@@ -65,6 +66,7 @@ def ensure_directories(cfg: dict) -> None:
         Path(cfg["logging"]["dir"]),
         Path(cfg["paths"]["state"]).parent,
         Path(cfg["paths"]["snapshots"]),
+        Path(cfg["scores"]["drift"]["snapshot_dir"]),
     ]:
         p.mkdir(parents=True, exist_ok=True)
     for key in ("inbox", "outbox"):
@@ -102,7 +104,7 @@ def bootstrap_from_seed(seed: dict, cfg: dict, logger: logging.Logger) -> None:
 
 
 # ────────────────────────────────────────────────────────────────────
-# EventBus memory handlers
+# EventBus handlers
 # ────────────────────────────────────────────────────────────────────
 def make_memory_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
     async def on_user_message(data: dict) -> None:
@@ -114,7 +116,7 @@ def make_memory_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
     async def on_user_urgent(data: dict) -> None:
         text = data.get("text", "")
         logger.warning(f"[EVENT] user.urgent ⚡ → '{text[:120]}'")
-        # TODO Phase 5: interrupt current heavy tick immediately on !URGENT
+        # TODO Phase 6: interrupt heavy tick immediately on !URGENT
         mem.add_episode("urgent", text[:_MAX_DESC_LEN] or "(empty)",
                         data={"tick": data.get("tick")})
 
@@ -142,9 +144,6 @@ def make_memory_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
     }
 
 
-# ────────────────────────────────────────────────────────────────────
-# world.ready / world.updated handlers (logging only)
-# ────────────────────────────────────────────────────────────────────
 def make_world_handlers(logger: logging.Logger) -> dict:
     async def on_world_ready(data: dict) -> None:
         logger.info(f"[WorldModel] Ready. Indexed {data.get('file_count', '?')} files.")
@@ -158,11 +157,25 @@ def make_world_handlers(logger: logging.Logger) -> dict:
     }
 
 
+def make_value_handlers(values: ValueEngine, mem: EpisodicMemory,
+                        logger: logging.Logger) -> dict:
+    async def on_value_changed(data: dict) -> None:
+        ctx = data.get("context", "")
+        logger.info(f"[ValueEngine] {ctx}")
+        # Drift warnings — check on every score change, log to episodic
+        warnings = values.check_drift()
+        for w in warnings:
+            mem.add_episode("value.drift_warning", w[:_MAX_DESC_LEN], outcome="unknown")
+
+    return {"value.changed": on_value_changed}
+
+
 # ────────────────────────────────────────────────────────────────────
 # Async main
 # ────────────────────────────────────────────────────────────────────
 async def async_main(cfg: dict, logger: logging.Logger) -> None:
     loop = asyncio.get_running_loop()
+    state_path = Path(cfg["paths"]["state"])
 
     # 1. EpisodicMemory
     mem = EpisodicMemory(Path(cfg["memory"]["episodic_db"]))
@@ -181,25 +194,38 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     # 2. EventBus
     bus = EventBus()
 
-    # 3. Memory handlers
+    # 3. ValueEngine
+    values = ValueEngine(cfg=cfg, bus=bus)
+    values.load(state_path=state_path, seed_path=SEED_PATH)
+    values.subscribe()   # hooks world.updated
+    # Save initial weekly snapshot (first run of the day)
+    values.save_weekly_snapshot()
+
+    # 4. Memory handlers
     for event_name, handler in make_memory_handlers(mem, logger).items():
         bus.subscribe(event_name, handler)
 
-    # 4. WorldModel
-    world = WorldModel(bus=bus, mem=mem)
-    world.subscribe()   # hooks world.file_* events
+    # 5. World handlers
     for event_name, handler in make_world_handlers(logger).items():
         bus.subscribe(event_name, handler)
 
-    # 5. FileMonitor
+    # 6. Value.changed handler
+    for event_name, handler in make_value_handlers(values, mem, logger).items():
+        bus.subscribe(event_name, handler)
+
+    # 7. WorldModel
+    world = WorldModel(bus=bus, mem=mem)
+    world.subscribe()
+
+    # 8. FileMonitor
     monitor = FileMonitor(watch_path=ROOT_DIR, bus=bus)
     monitor.start(loop)
 
-    # 6. LightTick
+    # 9. LightTick
     ticker    = LightTick(cfg=cfg, bus=bus)
     tick_task = asyncio.create_task(ticker.start(), name="light_tick")
 
-    # 7. Initial scan (after all subscribers are wired)
+    # 10. Initial scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode(
         "world.scan",
@@ -208,10 +234,14 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         data={"file_count": file_count},
     )
 
-    logger.info(f"All subsystems started. World: {world.summary()}")
+    logger.info("=" * 50)
+    logger.info(f"  World  : {world.summary()}")
+    logger.info(f"  Values : {values.to_prompt_context()}")
+    logger.info(f"  Mode   : {values.get_mode()}")
+    logger.info("=" * 50)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 8. Shutdown signal
+    # 11. Shutdown
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -226,7 +256,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     await stop_event.wait()
 
-    # 9. Graceful shutdown
+    # 12. Graceful shutdown
     ticker.stop()
     monitor.stop()
     tick_task.cancel()
@@ -235,6 +265,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     except asyncio.CancelledError:
         pass
 
+    values.save_weekly_snapshot()   # save final state of the day
     mem.add_episode("system.stop", "Digital Being stopped cleanly", outcome="success")
     mem.close()
     logger.info("Digital Being shut down cleanly.")
