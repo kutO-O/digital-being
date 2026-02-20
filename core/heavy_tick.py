@@ -1,6 +1,6 @@
 """
 Digital Being — HeavyTick
-Stage 21: ShellExecutor integration with action_type="shell".
+Stage 22: TimePerception integration - temporal context in monologues.
 
 Fix: Using belief_system.update_confidence() instead of direct dict modification.
 """
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from core.self_model import SelfModel
     from core.shell_executor import ShellExecutor
     from core.strategy_engine import StrategyEngine
+    from core.time_perception import TimePerception  # Stage 22
     from core.value_engine import ValueEngine
     from core.world_model import WorldModel
 
@@ -69,7 +70,8 @@ class HeavyTick:
         self_modification: "SelfModificationEngine | None" = None,
         belief_system:     "BeliefSystem | None"     = None,
         contradiction_resolver: "ContradictionResolver | None" = None,
-        shell_executor:    "ShellExecutor | None"    = None,  # Stage 21
+        shell_executor:    "ShellExecutor | None"    = None,
+        time_perception:   "TimePerception | None"   = None,  # Stage 22
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -91,7 +93,8 @@ class HeavyTick:
         self._self_mod     = self_modification
         self._beliefs      = belief_system
         self._contradictions = contradiction_resolver
-        self._shell_executor = shell_executor  # Stage 21
+        self._shell_executor = shell_executor
+        self._time_perc    = time_perception  # Stage 22
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(cfg.get("resources", {}).get("budget", {}).get("tick_timeout_sec", 30))
@@ -146,6 +149,10 @@ class HeavyTick:
         log.info(f"[HeavyTick #{n}] Starting.")
         self._ollama.reset_tick_counter()
 
+        # Stage 22: Update time context every tick
+        if self._time_perc is not None:
+            self._time_perc.update_context()
+
         monologue, ep_id = await self._step_monologue(n)
         await self._embed_and_store(ep_id, "monologue", monologue)
 
@@ -178,7 +185,7 @@ class HeavyTick:
             success, outcome = await self._action_write(n, monologue, goal_text)
         elif action_type == "reflect":
             success, outcome = await self._action_reflect(n)
-        elif action_type == "shell":  # Stage 21
+        elif action_type == "shell":
             shell_cmd = goal_data.get("shell_command", "")
             success, outcome = await self._action_shell(n, shell_cmd)
         else:
@@ -190,6 +197,35 @@ class HeavyTick:
         await self._step_self_modification(n)
         await self._step_belief_system(n)
         await self._step_contradiction_resolver(n)
+        await self._step_time_perception(n)  # Stage 22
+
+    # ────────────────────────────────────────────────────────────────
+    # Stage 22: Time Perception
+    # ────────────────────────────────────────────────────────────────
+    async def _step_time_perception(self, n: int) -> None:
+        if self._time_perc is None:
+            return
+        
+        loop = asyncio.get_event_loop()
+        
+        # Detect patterns periodically
+        if self._time_perc.should_detect(n):
+            log.info(f"[HeavyTick #{n}] TimePerception: detecting patterns.")
+            try:
+                episodes = self._mem.get_recent_episodes(50)
+                patterns = await loop.run_in_executor(
+                    None, lambda: self._time_perc.detect_patterns(episodes, self._ollama)
+                )
+                
+                for p in patterns[:3]:  # max 3 per cycle
+                    self._time_perc.add_pattern(
+                        p["pattern_type"], p["condition"], p["observation"], p.get("confidence", 0.5)
+                    )
+                
+                if patterns:
+                    log.info(f"[HeavyTick #{n}] TimePerception: {len(patterns)} pattern(s) detected.")
+            except Exception as e:
+                log.error(f"[HeavyTick #{n}] TimePerception error: {e}")
 
     # ────────────────────────────────────────────────────────────────
     # Stage 21: Shell Action
@@ -213,7 +249,6 @@ class HeavyTick:
         )
         
         if result["success"]:
-            # Store stdout in episodic memory (already done by execute_safe)
             log.info(
                 f"[HeavyTick #{n}] Shell command executed successfully. "
                 f"exit_code={result['exit_code']} time={result.get('execution_time_ms', 0)}ms"
@@ -303,7 +338,6 @@ class HeavyTick:
         item_type = item.get("type", "belief")
         item_id = item["id"]
         if item_type == "belief" and self._beliefs:
-            # Use update_confidence method
             updated = await loop.run_in_executor(
                 None, lambda: self._beliefs.update_confidence(item_id, delta)
             )
@@ -558,10 +592,20 @@ class HeavyTick:
         emotion_ctx = self._emotions.to_prompt_context() if self._emotions else ""
         tone_modifier = self._emotions.get_tone_modifier() if self._emotions else ""
         beliefs_ctx = self._beliefs.to_prompt_context(3) if self._beliefs else ""
+        
+        # Stage 22: Add temporal context
+        time_ctx = self._time_perc.to_prompt_context(3) if self._time_perc else ""
+        
         prompt = (f"Твоё состояние:\n{self._self_model.to_prompt_context()}\n{self._values.to_prompt_context()}\n"
                   f"{strategy_ctx}\nМир: {self._world.summary()}\nПоследние изменения: {changes_str}\n"
-                  f"Значимые эпизоды:\n{eps_str}\n\nНапиши короткий внутренний монолог (3-5 предложений):\n"
-                  f"Что ты сейчас замечаешь? Что тебя беспокоит или интересует? О чём ты думаешь?")
+                  f"Значимые эпизоды:\n{eps_str}\n")
+        
+        if time_ctx:
+            prompt += f"\n{time_ctx}\n"
+        
+        prompt += "\nНапиши короткий внутренний монолог (3-5 предложений):\n"
+        prompt += "Что ты сейчас замечаешь? Что тебя беспокоит или интересует? О чём ты думаешь?"
+        
         if beliefs_ctx:
             prompt += f"\n{beliefs_ctx}"
         if self._curiosity is not None and self._curiosity_enabled:
