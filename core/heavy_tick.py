@@ -1,22 +1,22 @@
 """
 Digital Being — HeavyTick
-Stage 12: EmotionEngine integration.
+Stage 13: ReflectionEngine integration.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always) + embed → VectorMemory
   Step 2 — Goal Selection      via StrategyEngine + semantic context
   Step 3 — Action
-  Step 4 — After-action (includes emotion update)
+  Step 4 — After-action (includes emotion update + reflection trigger)
 
-New in Stage 12:
-  - emotion_engine injected (optional, gracefully skipped if None)
-  - _step_monologue(): emotion context + tone modifier added to system prompt
-  - _step_goal_selection(): emotion context added to goal-selection prompt
-  - _step_after_action(): emotion_engine.update() called after every action
+New in Stage 13:
+  - reflection_engine injected (optional, gracefully skipped if None)
+  - _step_after_action(): calls reflection_engine.run() via run_in_executor
+    when should_run(tick_count) is True
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
   - embed() does NOT count against budget
+  - Reflection adds 1 extra LLM call on reflection ticks (outside normal budget)
   - Max 30 s per tick (asyncio.wait_for)
 """
 
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
     from core.ollama_client import OllamaClient
+    from core.reflection_engine import ReflectionEngine
     from core.self_model import SelfModel
     from core.strategy_engine import StrategyEngine
     from core.value_engine import ValueEngine
@@ -78,6 +79,7 @@ class HeavyTick:
         strategy:     "StrategyEngine | None" = None,
         vector_memory: "VectorMemory | None" = None,
         emotion_engine: "EmotionEngine | None" = None,
+        reflection_engine: "ReflectionEngine | None" = None,  # Stage 13
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -91,6 +93,7 @@ class HeavyTick:
         self._strategy     = strategy
         self._vector_mem   = vector_memory
         self._emotions     = emotion_engine
+        self._reflection   = reflection_engine  # Stage 13
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(
@@ -256,6 +259,17 @@ class HeavyTick:
             f"risk={risk_level} | outcome={outcome}"
         )
         log.info(f"[HeavyTick #{n}] Completed. action={action_type} outcome={outcome}")
+
+        # Stage 13: Reflection Engine trigger
+        if self._reflection is not None and self._reflection.should_run(n):
+            log.info(f"[HeavyTick #{n}] Triggering ReflectionEngine.")
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, lambda: self._reflection.run(n)
+                )
+            except Exception as e:
+                log.error(f"[HeavyTick #{n}] ReflectionEngine.run() error: {e}")
 
         # Weekly tasks
         if self._strategy is not None:

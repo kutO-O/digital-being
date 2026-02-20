@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 12: /emotions endpoint added.
+Stage 13: /reflection endpoint added.
 
 Endpoints (all GET, all return JSON):
   /status      — uptime, tick_count, mode, current goal
@@ -12,6 +12,7 @@ Endpoints (all GET, all return JSON):
   /episodes    — filtered episode search (?limit=20&event_type=...)
   /search      — semantic search via VectorMemory (?q=text&top_k=5)
   /emotions    — current emotional state, dominant emotion, tone modifier [Stage 12]
+  /reflection  — last 5 reflections + total count [Stage 13]
 
 Design rules:
   - Pure read — no mutations
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
     from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
     from core.ollama_client import OllamaClient
+    from core.reflection_engine import ReflectionEngine
     from core.strategy_engine import StrategyEngine
     from core.value_engine import ValueEngine
 
@@ -101,6 +103,7 @@ class IntrospectionAPI:
         app.router.add_get("/episodes",   self._handle_episodes)
         app.router.add_get("/search",     self._handle_search)
         app.router.add_get("/emotions",   self._handle_emotions)   # Stage 12
+        app.router.add_get("/reflection", self._handle_reflection) # Stage 13
 
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -297,6 +300,26 @@ class IntrospectionAPI:
                 "tone_modifier": ee.get_tone_modifier(),
             }
             return self._json(payload)
+        except Exception as e:
+            return self._error(e)
+
+    async def _handle_reflection(self, request: web.Request) -> web.Response:
+        """GET /reflection — Stage 13: return last reflections from log."""
+        try:
+            re_engine = self._c.get("reflection_engine")
+            if re_engine is None:
+                return self._json({
+                    "last_reflections": [],
+                    "total_count":      0,
+                    "note":             "ReflectionEngine not available",
+                })
+            all_reflections = re_engine.load_log()
+            total = len(all_reflections)
+            last_5 = all_reflections[-5:] if total > 0 else []
+            return self._json({
+                "last_reflections": last_5,
+                "total_count":      total,
+            })
         except Exception as e:
             return self._error(e)
 
