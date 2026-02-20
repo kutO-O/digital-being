@@ -2,8 +2,7 @@
 Digital Being — BeliefSystem
 Stage 19: Form and validate beliefs based on observations.
 
-Fixes:
-- should_form() and should_validate() now return False when tick_count == 0
+Fix: Added update_confidence() method to avoid tight coupling.
 """
 
 from __future__ import annotations
@@ -91,6 +90,29 @@ class BeliefSystem:
         log.info(f"Belief added: [{category}] {statement[:80]}")
         return True
 
+    def update_confidence(self, belief_id: str, delta: float) -> bool:
+        """Update confidence of a belief by delta. Returns True if successful."""
+        for b in self._state["beliefs"]:
+            if b["id"] == belief_id:
+                old_conf = b["confidence"]
+                new_conf = max(0.0, min(1.0, old_conf + delta))
+                b["confidence"] = new_conf
+                b["last_updated"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                
+                # Update status based on confidence
+                if new_conf >= 0.85 and b["status"] == "active":
+                    b["status"] = "strong"
+                elif new_conf < 0.2 and b["status"] != "rejected":
+                    b["status"] = "rejected"
+                    self._state["total_beliefs_rejected"] += 1
+                
+                self._save()
+                log.info(f"Belief confidence updated: {b['statement'][:60]} | {old_conf:.2f} → {new_conf:.2f}")
+                return True
+        
+        log.warning(f"Belief not found: {belief_id}")
+        return False
+
     def validate_belief(self, belief_id: str, recent_episodes: list[dict], ollama: "OllamaClient") -> bool:
         belief = None
         for b in self._state["beliefs"]:
@@ -113,19 +135,14 @@ class BeliefSystem:
             verdict = data.get("verdict", "neutral")
             delta = float(data.get("confidence_delta", 0.0))
             delta = max(-0.3, min(0.3, delta))
-            old_conf = belief["confidence"]
-            new_conf = max(0.0, min(1.0, old_conf + delta))
-            belief["confidence"] = new_conf
+            
+            # Use update_confidence method
+            self.update_confidence(belief_id, delta)
             belief["validation_count"] += 1
-            belief["last_updated"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-            if new_conf >= 0.85 and belief["status"] == "active":
-                belief["status"] = "strong"
-            elif new_conf < 0.2 and belief["status"] != "rejected":
-                belief["status"] = "rejected"
-                self._state["total_beliefs_rejected"] += 1
             self._state["total_beliefs_validated"] += 1
             self._save()
-            log.info(f"Belief validated: {belief['statement'][:60]} | {old_conf:.2f} → {new_conf:.2f} ({verdict})")
+            
+            log.info(f"Belief validated: {belief['statement'][:60]} | verdict={verdict}")
             return True
         except (json.JSONDecodeError, ValueError, Exception) as e:
             log.error(f"validate_belief error: {e}")
