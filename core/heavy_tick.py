@@ -1,6 +1,6 @@
 """
 Digital Being — HeavyTick
-Stage 18: SelfModificationEngine integration.
+Stage 19: BeliefSystem integration.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always) + embed → VectorMemory
@@ -11,12 +11,14 @@ Each tick executes in strict order (with per-tick timeout):
             + narrative trigger + GoalPersistence mark_completed on success)
   Step 5 — Curiosity: generate questions / seek answers (Stage 17)
   Step 6 — Self-Modification: every 50 ticks, suggest and apply improvements (Stage 18)
+  Step 7 — Belief System: form new beliefs every 20 ticks, validate every 10 ticks (Stage 19)
 
-New in Stage 18:
-  - self_modification injected (optional, gracefully skipped if None)
-  - After curiosity step:
-      • should_suggest()  → suggest_improvements() → propose() up to 2 suggestions
-  - Config changes are logged and published via EventBus
+New in Stage 19:
+  - belief_system injected (optional, gracefully skipped if None)
+  - After self-modification step:
+      • should_form()    → form_beliefs() → add_belief() for each new belief
+      • should_validate() → get_beliefs() → validate_belief() for 1 random belief
+  - Beliefs are included in monologue prompt via to_prompt_context()
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
@@ -25,6 +27,7 @@ Resource budget:
   - Narrative adds 1 extra LLM call on narrative ticks (outside normal budget)
   - Curiosity adds up to 2 extra LLM calls (generate + seek) on curiosity ticks
   - Self-Modification adds up to 3 extra LLM calls (suggest + 2x verify) every 50 ticks
+  - Belief System adds up to 2 extra LLM calls (form + validate) per trigger
   - Max 30 s per tick (asyncio.wait_for)
 """
 
@@ -39,6 +42,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.attention_system import AttentionSystem
+    from core.belief_system import BeliefSystem
     from core.curiosity_engine import CuriosityEngine
     from core.emotion_engine import EmotionEngine
     from core.goal_persistence import GoalPersistence
@@ -98,6 +102,7 @@ class HeavyTick:
         attention_system:  "AttentionSystem | None"  = None,  # Stage 16
         curiosity_engine:  "CuriosityEngine | None"  = None,  # Stage 17
         self_modification: "SelfModificationEngine | None" = None,  # Stage 18
+        belief_system:     "BeliefSystem | None"     = None,  # Stage 19
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -117,6 +122,7 @@ class HeavyTick:
         self._attention    = attention_system   # Stage 16
         self._curiosity    = curiosity_engine   # Stage 17
         self._self_mod     = self_modification  # Stage 18
+        self._beliefs      = belief_system      # Stage 19
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(
@@ -264,6 +270,82 @@ class HeavyTick:
 
         # Step 6: Self-Modification Engine (Stage 18)
         await self._step_self_modification(n)
+
+        # Step 7: Belief System (Stage 19)
+        await self._step_belief_system(n)
+
+    # ────────────────────────────────────────────────────────────────
+    # Stage 19: Belief System step
+    # ────────────────────────────────────────────────────────────────
+    async def _step_belief_system(self, n: int) -> None:
+        """Формирование и валидация убеждений о мире."""
+        if self._beliefs is None:
+            return
+
+        loop = asyncio.get_event_loop()
+        recent_episodes = self._mem.get_recent_episodes(15)
+
+        # Formation: every 20 ticks if active < 30
+        if self._beliefs.should_form(n):
+            log.info(f"[HeavyTick #{n}] BeliefSystem: forming new beliefs.")
+            try:
+                new_beliefs = await loop.run_in_executor(
+                    None,
+                    lambda: self._beliefs.form_beliefs(
+                        recent_episodes, self._world, self._ollama
+                    ),
+                )
+                
+                for b in new_beliefs:
+                    added = self._beliefs.add_belief(
+                        b["statement"],
+                        b["category"],
+                        b.get("initial_confidence", 0.5),
+                    )
+                    if added:
+                        self._mem.add_episode(
+                            "belief.formed",
+                            f"[{b['category']}] {b['statement'][:200]}",
+                            outcome="success",
+                            data={"confidence": b.get("initial_confidence", 0.5)},
+                        )
+                
+                if new_beliefs:
+                    log.info(
+                        f"[HeavyTick #{n}] BeliefSystem: "
+                        f"{len(new_beliefs)} belief(s) added."
+                    )
+            except Exception as e:
+                log.error(f"[HeavyTick #{n}] BeliefSystem form error: {e}")
+
+        # Validation: every 10 ticks if there are active beliefs
+        if self._beliefs.should_validate(n):
+            try:
+                beliefs_to_check = self._beliefs.get_beliefs(
+                    min_confidence=0.3, status="active"
+                )
+                if beliefs_to_check:
+                    # Validate 1 random belief
+                    import random
+                    b = random.choice(beliefs_to_check)
+                    log.info(
+                        f"[HeavyTick #{n}] BeliefSystem: validating "
+                        f"'{b['statement'][:60]}'"
+                    )
+                    
+                    validated = await loop.run_in_executor(
+                        None,
+                        lambda: self._beliefs.validate_belief(
+                            b["id"], recent_episodes, self._ollama
+                        ),
+                    )
+                    
+                    if validated:
+                        log.info(
+                            f"[HeavyTick #{n}] BeliefSystem: validation completed."
+                        )
+            except Exception as e:
+                log.error(f"[HeavyTick #{n}] BeliefSystem validate error: {e}")
 
     # ────────────────────────────────────────────────────────────────
     # Stage 18: Self-Modification step
@@ -624,6 +706,7 @@ class HeavyTick:
         Stage 16: recent episodes passed through AttentionSystem before
                   being formatted; attention focus injected into system prompt.
         Stage 17: open curiosity questions appended to prompt.
+        Stage 19: beliefs context appended to prompt via to_prompt_context().
         Returns (text, episode_id).
         """
         recent_changes = self._world.get_recent_changes(3)
@@ -645,6 +728,9 @@ class HeavyTick:
         emotion_ctx  = self._emotions.to_prompt_context() if self._emotions else ""
         tone_modifier = self._emotions.get_tone_modifier() if self._emotions else ""
 
+        # Stage 19: build beliefs context
+        beliefs_ctx = self._beliefs.to_prompt_context(3) if self._beliefs else ""
+
         prompt = (
             f"Твоё состояние:\n"
             f"{self._self_model.to_prompt_context()}\n"
@@ -656,6 +742,10 @@ class HeavyTick:
             f"Напиши короткий внутренний монолог (3-5 предложений):\n"
             f"Что ты сейчас замечаешь? Что тебя беспокоит или интересует? О чём ты думаешь?"
         )
+
+        # Stage 19: append beliefs to prompt
+        if beliefs_ctx:
+            prompt += f"\n{beliefs_ctx}"
 
         # Stage 17: append open curiosity questions to prompt
         if self._curiosity is not None and self._curiosity_enabled:
