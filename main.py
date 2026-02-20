@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 8: StrategyEngine added. LightTick and HeavyTick run in parallel.
+Stage 9: VectorMemory added. LightTick and HeavyTick run in parallel.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from core.file_monitor import FileMonitor
 from core.heavy_tick import HeavyTick
 from core.light_tick import LightTick
 from core.memory.episodic import EpisodicMemory
+from core.memory.vector_memory import VectorMemory
 from core.milestones import Milestones
 from core.ollama_client import OllamaClient
 from core.self_model import SelfModel
@@ -58,7 +59,6 @@ def setup_logging(cfg: dict) -> logging.Logger:
             logging.FileHandler(log_dir / "digital_being.log", encoding="utf-8"),
         ],
     )
-    # actions.log
     a_handler = logging.FileHandler(log_dir / "actions.log", encoding="utf-8")
     a_handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
     logging.getLogger("digital_being.actions").addHandler(a_handler)
@@ -178,7 +178,6 @@ def make_strategy_handlers(
     mem: EpisodicMemory,
     logger: logging.Logger,
 ) -> dict:
-    """Stage 8: subscribe to strategy events."""
     async def on_vector_changed(data: dict) -> None:
         vector = data.get("vector", "")
         logger.info(f"[StrategyEngine] Long-term vector changed: '{vector[:120]}'")
@@ -191,7 +190,6 @@ def make_strategy_handlers(
             f"Новый долгосрочный вектор: '{vector[:200]}'",
             outcome="success",
         )
-
     return {"strategy.vector_changed": on_vector_changed}
 
 
@@ -216,16 +214,21 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         for p in principles:
             logger.info(f"  • [{p['id']}] {p['text']}")
 
-    # 2. EventBus
+    # 2. VectorMemory (Stage 9)
+    vector_mem = VectorMemory(ROOT_DIR / "memory" / "vector_memory.db")
+    vector_mem.init()
+    logger.info(f"VectorMemory ready. Stored vectors: {vector_mem.count()}")
+
+    # 3. EventBus
     bus = EventBus()
 
-    # 3. ValueEngine
+    # 4. ValueEngine
     values = ValueEngine(cfg=cfg, bus=bus)
     values.load(state_path=state_path, seed_path=SEED_PATH)
     values.subscribe()
     values.save_weekly_snapshot()
 
-    # 4. SelfModel
+    # 5. SelfModel
     self_model = SelfModel(bus=bus)
     self_model.load(
         self_model_path=ROOT_DIR / "self_model.json",
@@ -235,12 +238,12 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     self_model.subscribe()
     self_model.save_weekly_snapshot()
 
-    # 5. Milestones
+    # 6. Milestones
     milestones = Milestones(bus=bus)
     milestones.load(ROOT_DIR / "milestones" / "milestones.json")
     milestones.subscribe()
 
-    # 6. OllamaClient
+    # 7. OllamaClient
     ollama = OllamaClient(cfg)
     ollama_ok = ollama.is_available()
     if ollama_ok:
@@ -248,7 +251,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.warning("Ollama: ❌ unavailable. HeavyTick will skip ticks until Ollama comes up.")
 
-    # 7. Wire all EventBus handlers
+    # 8. Wire EventBus handlers
     for event_name, handler in make_memory_handlers(mem, logger).items():
         bus.subscribe(event_name, handler)
     for event_name, handler in make_world_handlers(logger).items():
@@ -258,23 +261,23 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     for event_name, handler in make_self_handlers(self_model, mem, logger).items():
         bus.subscribe(event_name, handler)
 
-    # 8. WorldModel
+    # 9. WorldModel
     world = WorldModel(bus=bus, mem=mem)
     world.subscribe()
 
-    # 9. FileMonitor
+    # 10. FileMonitor
     monitor = FileMonitor(watch_path=ROOT_DIR, bus=bus)
     monitor.start(loop)
 
-    # Stage 8: StrategyEngine
+    # 11. StrategyEngine (Stage 8)
     strategy = StrategyEngine(memory_dir=ROOT_DIR / "memory", event_bus=bus)
     strategy.load()
 
-    # Wire strategy events (after milestones are ready)
+    # Wire strategy events AFTER milestones are ready
     for event_name, handler in make_strategy_handlers(milestones, mem, logger).items():
         bus.subscribe(event_name, handler)
 
-    # 10. HeavyTick (Stage 8: strategy injected)
+    # 12. HeavyTick (Stage 9: vector_memory injected)
     heavy = HeavyTick(
         cfg=cfg,
         ollama=ollama,
@@ -286,31 +289,33 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         log_dir=log_dir,
         sandbox_dir=ROOT_DIR / "sandbox",
         strategy=strategy,
+        vector_memory=vector_mem,
     )
 
-    # 11. LightTick
+    # 13. LightTick
     ticker = LightTick(cfg=cfg, bus=bus)
 
-    # 12. Initial world scan
+    # 14. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode("world.scan",
                     f"Initial scan: {file_count} files",
                     outcome="success",
                     data={"file_count": file_count})
 
-    # 13. Startup banner
+    # 15. Startup banner
     logger.info("=" * 56)
-    logger.info(f"  World      : {world.summary()}")
-    logger.info(f"  Values     : {values.to_prompt_context()}")
-    logger.info(f"  Self v{self_model.get_version():<3}  : {self_model.get_identity()['name']}")
-    logger.info(f"  Principles : {len(self_model.get_principles())}")
+    logger.info(f"  World        : {world.summary()}")
+    logger.info(f"  Values       : {values.to_prompt_context()}")
+    logger.info(f"  Self v{self_model.get_version():<3}    : {self_model.get_identity()['name']}")
+    logger.info(f"  Principles   : {len(self_model.get_principles())}")
     logger.info(f"  {milestones.summary()}")
-    logger.info(f"  Strategy   : {strategy.to_prompt_context()!r:.120}")
-    logger.info(f"  Ollama     : {'ok' if ollama_ok else 'unavailable'}")
+    logger.info(f"  Strategy     : {strategy.to_prompt_context()!r:.120}")
+    logger.info(f"  Vectors      : {vector_mem.count()} stored")
+    logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 14. Launch ticks in parallel
+    # 16. Launch ticks in parallel
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -323,12 +328,12 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         except NotImplementedError:
             signal.signal(sig, lambda s, f: stop_event.set())
 
-    light_task = asyncio.create_task(ticker.start(),  name="light_tick")
-    heavy_task = asyncio.create_task(heavy.start(),   name="heavy_tick")
+    light_task = asyncio.create_task(ticker.start(), name="light_tick")
+    heavy_task = asyncio.create_task(heavy.start(), name="heavy_tick")
 
     await stop_event.wait()
 
-    # 15. Graceful shutdown
+    # 17. Graceful shutdown
     ticker.stop()
     heavy.stop()
     monitor.stop()
@@ -345,6 +350,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     await self_model.check_drift(values)
 
     mem.add_episode("system.stop", "Digital Being stopped cleanly", outcome="success")
+    vector_mem.close()
     mem.close()
     logger.info("Digital Being shut down cleanly.")
 

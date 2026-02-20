@@ -1,22 +1,22 @@
 """
 Digital Being — HeavyTick
-Stage 8: Integrated with StrategyEngine.
+Stage 9: VectorMemory integration — embed monologue, semantic search before goal selection.
 
 Each tick executes in strict order (with per-tick timeout):
-  Step 1 — Internal Monologue  (always)
-  Step 2 — Goal Selection      via StrategyEngine.select_goal() (skipped in 'defensive' mode)
-  Step 3 — Action              (skipped in 'defensive' mode or action_type='observe')
-  Step 4 — After-action        (always, updates scores + publishes value.changed)
+  Step 1 — Internal Monologue  (always) + embed → VectorMemory
+  Step 2 — Goal Selection      via StrategyEngine + semantic context
+  Step 3 — Action
+  Step 4 — After-action
 
-Extra logic added in Stage 8:
-  - strategy_engine.set_now() called after every action
-  - strategy_engine.should_update_weekly() checked each tick;
-    if True → generate new weekly direction via LLM → update_weekly()
+New in Stage 9:
+  - _embed_and_store()  : embed monologue text, store in VectorMemory
+  - _semantic_context() : search VectorMemory for similar past episodes
+  - delete_old() called once per week (every WEEKLY_CLEANUP_TICKS ticks)
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
+  - embed() does NOT count against budget
   - Max 30 s per tick (asyncio.wait_for)
-  - If Ollama unavailable — skip entire tick silently
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.memory.episodic import EpisodicMemory
+    from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
     from core.ollama_client import OllamaClient
     from core.self_model import SelfModel
@@ -39,10 +40,9 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("digital_being.heavy_tick")
 
-# Dedicated decision logger (logs/decisions.log)
-decision_log = logging.getLogger("digital_being.decisions")
+# How many ticks between vector DB cleanup runs (~7 days if tick=10 min)
+WEEKLY_CLEANUP_TICKS = 1008
 
-# Default goal used when LLM fails to produce valid JSON
 _DEFAULT_GOAL: dict = {
     "goal":        "наблюдать за средой",
     "reasoning":   "LLM недоступен или не вернул валидный JSON",
@@ -54,12 +54,11 @@ _DEFAULT_GOAL: dict = {
 class HeavyTick:
     """
     Async heavy-tick engine.
-    All dependencies are injected — no globals.
+    All dependencies injected — no globals.
 
     Lifecycle:
-        ht = HeavyTick(cfg, ollama, world, values, self_model, mem, milestones, strategy)
+        ht = HeavyTick(..., vector_memory=vm)
         task = asyncio.create_task(ht.start())
-        # ...
         ht.stop()
     """
 
@@ -74,32 +73,33 @@ class HeavyTick:
         milestones: "Milestones",
         log_dir:    Path,
         sandbox_dir: Path,
-        strategy:   "StrategyEngine | None" = None,
+        strategy:    "StrategyEngine | None" = None,
+        vector_memory: "VectorMemory | None" = None,
     ) -> None:
-        self._cfg         = cfg
-        self._ollama      = ollama
-        self._world       = world
-        self._values      = values
-        self._self_model  = self_model
-        self._mem         = mem
-        self._milestones  = milestones
-        self._log_dir     = log_dir
-        self._sandbox_dir = sandbox_dir
-        self._strategy    = strategy          # Stage 8: optional, for backwards compat
+        self._cfg          = cfg
+        self._ollama       = ollama
+        self._world        = world
+        self._values       = values
+        self._self_model   = self_model
+        self._mem          = mem
+        self._milestones   = milestones
+        self._log_dir      = log_dir
+        self._sandbox_dir  = sandbox_dir
+        self._strategy     = strategy
+        self._vector_mem   = vector_memory
 
-        self._interval     = cfg["ticks"]["heavy_tick_sec"]
-        self._timeout      = int(
+        self._interval    = cfg["ticks"]["heavy_tick_sec"]
+        self._timeout     = int(
             cfg.get("resources", {}).get("budget", {}).get("tick_timeout_sec", 30)
         )
-        self._tick_count   = 0
-        self._running      = False
+        self._tick_count  = 0
+        self._running     = False
 
-        # File handles opened once
-        self._monologue_log: logging.Logger = self._make_file_logger(
+        self._monologue_log = self._make_file_logger(
             "digital_being.monologue",
             log_dir / "monologue.log",
         )
-        self._decision_log: logging.Logger = self._make_file_logger(
+        self._decision_log = self._make_file_logger(
             "digital_being.decisions",
             log_dir / "decisions.log",
         )
@@ -108,7 +108,6 @@ class HeavyTick:
     # Main loop
     # ────────────────────────────────────────────────────────────
     async def start(self) -> None:
-        """Run the heavy tick loop until stop() is called."""
         self._running = True
         self._sandbox_dir.mkdir(parents=True, exist_ok=True)
         self._log_dir.mkdir(parents=True, exist_ok=True)
@@ -118,25 +117,15 @@ class HeavyTick:
             tick_start = time.monotonic()
             self._tick_count += 1
 
-            # Skip if Ollama is unavailable
             if not self._ollama.is_available():
-                log.warning(
-                    f"[HeavyTick #{self._tick_count}] Ollama unavailable — skipping tick."
-                )
+                log.warning(f"[HeavyTick #{self._tick_count}] Ollama unavailable — skipping tick.")
                 await asyncio.sleep(self._interval)
                 continue
 
-            # Run entire tick body under timeout
             try:
-                await asyncio.wait_for(
-                    self._run_tick(),
-                    timeout=self._timeout,
-                )
+                await asyncio.wait_for(self._run_tick(), timeout=self._timeout)
             except asyncio.TimeoutError:
-                log.error(
-                    f"[HeavyTick #{self._tick_count}] "
-                    f"Timeout ({self._timeout}s) exceeded."
-                )
+                log.error(f"[HeavyTick #{self._tick_count}] Timeout ({self._timeout}s) exceeded.")
                 self._mem.add_episode(
                     "heavy_tick.timeout",
                     f"Heavy tick #{self._tick_count} exceeded {self._timeout}s timeout",
@@ -156,15 +145,17 @@ class HeavyTick:
     # Tick body
     # ────────────────────────────────────────────────────────────
     async def _run_tick(self) -> None:
-        """Execute one full Heavy Tick (steps 1–4)."""
         n = self._tick_count
         log.info(f"[HeavyTick #{n}] Starting.")
         self._ollama.reset_tick_counter()
 
-        # ─ Step 1: Internal Monologue ────────────────────────────────────
-        monologue = await self._step_monologue(n)
+        # Step 1: Monologue
+        monologue, ep_id = await self._step_monologue(n)
 
-        # Defensive mode: only observe, no decisions
+        # Stage 9: embed monologue and store in VectorMemory
+        await self._embed_and_store(ep_id, "monologue", monologue)
+
+        # Defensive mode
         mode = self._values.get_mode()
         if mode == "defensive":
             log.info(f"[HeavyTick #{n}] Mode=defensive — skipping goal selection.")
@@ -178,39 +169,37 @@ class HeavyTick:
             )
             return
 
-        # ─ Step 2: Goal Selection (Stage 8: via StrategyEngine) ──────────
-        goal_data = await self._step_goal_selection(n, monologue)
+        # Stage 9: semantic context for goal selection
+        semantic_ctx = await self._semantic_context(monologue)
+
+        # Step 2: Goal Selection
+        goal_data = await self._step_goal_selection(n, monologue, semantic_ctx)
 
         action_type = goal_data.get("action_type", "observe")
         risk_level  = goal_data.get("risk_level",  "low")
         goal_text   = goal_data.get("goal",         _DEFAULT_GOAL["goal"])
 
-        # ─ Step 3: Action ────────────────────────────────────────────────
+        # Step 3: Action
         success = True
         outcome = "observe"
 
         if action_type == "observe":
             outcome = "observed"
             log.info(f"[HeavyTick #{n}] Action: observe (passive tick).")
-
         elif action_type == "analyze":
             success, outcome = await self._action_analyze(n)
-
         elif action_type == "write":
             success, outcome = await self._action_write(n, monologue, goal_text)
-
         elif action_type == "reflect":
             success, outcome = await self._action_reflect(n)
-
         else:
             log.warning(f"[HeavyTick #{n}] Unknown action_type='{action_type}'. Treating as observe.")
             outcome = "observed"
 
-        # ─ Step 4: After-action ──────────────────────────────────────────
+        # Step 4: After-action
         self._values.update_after_action(success=success)
         await self._values._publish_changed()
 
-        # Stage 8: persist current goal to StrategyEngine
         if self._strategy is not None:
             self._strategy.set_now(goal_text, action_type)
 
@@ -218,46 +207,99 @@ class HeavyTick:
             f"heavy_tick.{action_type}",
             f"Tick #{n}: goal='{goal_text[:200]}' outcome={outcome}",
             outcome="success" if success else "error",
-            data={
-                "tick":        n,
-                "action_type": action_type,
-                "risk_level":  risk_level,
-                "mode":        mode,
-            },
+            data={"tick": n, "action_type": action_type, "risk_level": risk_level, "mode": mode},
         )
 
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
         self._decision_log.info(
             f"[{ts}] TICK #{n} | "
-            f"goal={goal_text[:80]} | "
-            f"action={action_type} | "
-            f"risk={risk_level} | "
-            f"outcome={outcome}"
+            f"goal={goal_text[:80]} | action={action_type} | "
+            f"risk={risk_level} | outcome={outcome}"
         )
         log.info(f"[HeavyTick #{n}] Completed. action={action_type} outcome={outcome}")
 
-        # Stage 8: update weekly direction if 24h passed
+        # Weekly tasks
         if self._strategy is not None:
             await self._maybe_update_weekly(n)
+        if self._vector_mem is not None and self._tick_count % WEEKLY_CLEANUP_TICKS == 0:
+            deleted = self._vector_mem.delete_old(days=30)
+            log.info(f"[HeavyTick #{n}] VectorMemory cleanup: {deleted} old records removed.")
 
     # ────────────────────────────────────────────────────────────
-    # Stage 8: weekly direction refresh
+    # Stage 9 helpers
+    # ────────────────────────────────────────────────────────────
+    async def _embed_and_store(self, ep_id: int | None, event_type: str, text: str) -> None:
+        """
+        Embed `text` via Ollama and store in VectorMemory.
+        Fire-and-forget: errors are logged, never raised.
+        """
+        if self._vector_mem is None:
+            return
+        try:
+            loop      = asyncio.get_event_loop()
+            embedding = await loop.run_in_executor(
+                None, lambda: self._ollama.embed(text[:2000])
+            )
+            if embedding:
+                self._vector_mem.add(
+                    episode_id=ep_id or 0,
+                    event_type=event_type,
+                    text=text[:500],
+                    embedding=embedding,
+                )
+        except Exception as e:
+            log.debug(f"_embed_and_store(): {e}")
+
+    async def _semantic_context(self, query_text: str) -> str:
+        """
+        Embed `query_text`, search VectorMemory for similar past episodes.
+        Returns a formatted string ready for LLM injection, or "" if unavailable.
+        """
+        if self._vector_mem is None:
+            return ""
+        if self._vector_mem.count() == 0:
+            return ""
+        try:
+            loop      = asyncio.get_event_loop()
+            embedding = await loop.run_in_executor(
+                None, lambda: self._ollama.embed(query_text[:2000])
+            )
+            if not embedding:
+                return ""
+
+            results = self._vector_mem.search(embedding, top_k=3)
+            if not results:
+                return ""
+
+            log.debug(
+                f"Semantic search: {len(results)} results, "
+                f"top score={results[0]['score']:.3f}"
+            )
+
+            lines = ["Похожие прошлые опыты:"]
+            for r in results:
+                ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(r["created_at"]))
+                lines.append(f"  [{r['event_type']} | {ts} | sim={r['score']:.2f}] {r['text'][:120]}")
+            return "\n".join(lines)
+        except Exception as e:
+            log.debug(f"_semantic_context(): {e}")
+            return ""
+
+    # ────────────────────────────────────────────────────────────
+    # Weekly direction refresh
     # ────────────────────────────────────────────────────────────
     async def _maybe_update_weekly(self, n: int) -> None:
-        """Check if weekly direction needs refresh; ask LLM and update if so."""
         if not self._strategy.should_update_weekly():
             return
-
         log.info(f"[HeavyTick #{n}] Weekly direction update triggered.")
         context = self._strategy.to_prompt_context()
         prompt = (
             f"{context}\n\n"
             f"Прошли сутки. Сформулируй новое недельное направление (1 предложение) "
             f"которое отражает текущее состояние системы и долгосрочный вектор. "
-            f"Отвечай ТОЛЬКО текстом направления без пояснений."
+            f"Отвечай ТОЛЬКО текстом направления."
         )
         system = "Ты — Digital Being. Формулируй кратко и по делу."
-
         try:
             loop      = asyncio.get_event_loop()
             direction = await loop.run_in_executor(
@@ -280,8 +322,8 @@ class HeavyTick:
     # ────────────────────────────────────────────────────────────
     # Step implementations
     # ────────────────────────────────────────────────────────────
-    async def _step_monologue(self, n: int) -> str:
-        """Step 1: Generate internal monologue via LLM."""
+    async def _step_monologue(self, n: int) -> tuple[str, int | None]:
+        """Step 1: Generate monologue. Returns (text, episode_id)."""
         recent_changes = self._world.get_recent_changes(3)
         changes_str    = ", ".join(
             f"{c.change_type}:{Path(c.path).name}" for c in recent_changes
@@ -293,11 +335,9 @@ class HeavyTick:
             for e in recent_eps
         ) if recent_eps else "нет"
 
-        # Stage 8: enrich monologue prompt with strategy context
         strategy_ctx = (
             self._strategy.to_prompt_context()
-            if self._strategy is not None
-            else ""
+            if self._strategy is not None else ""
         )
 
         prompt = (
@@ -311,74 +351,71 @@ class HeavyTick:
             f"Напиши короткий внутренний монолог (3-5 предложений):\n"
             f"Что ты сейчас замечаешь? Что тебя беспокоит или интересует? О чём ты думаешь?"
         )
-        system = "Tы — Digital Being. Aвтономная система. Отвечай от первого лица. Будь краток."
+        system = "Ты — Digital Being. Автономная система. Отвечай от первого лица. Будь краток."
 
         loop      = asyncio.get_event_loop()
         monologue = await loop.run_in_executor(
             None, lambda: self._ollama.chat(prompt, system)
         )
-
         if not monologue:
             monologue = "(monologue unavailable — LLM did not respond)"
 
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
         self._monologue_log.info(f"[{ts}] TICK #{n}\n{monologue}\n---")
 
-        self._mem.add_episode(
+        ep_id = self._mem.add_episode(
             "monologue",
             monologue[:1000],
             outcome="success",
             data={"tick": n},
         )
         log.info(f"[HeavyTick #{n}] Monologue written ({len(monologue)} chars).")
-        return monologue
+        return monologue, ep_id
 
-    async def _step_goal_selection(self, n: int, monologue: str) -> dict:
+    async def _step_goal_selection(
+        self, n: int, monologue: str, semantic_ctx: str = ""
+    ) -> dict:
         """
         Step 2: Select goal.
-        Stage 8: delegates to StrategyEngine.select_goal() when available.
-        Falls back to direct LLM call if StrategyEngine is not injected.
+        Stage 9: semantic_ctx injected into prompt.
+        Delegates to StrategyEngine when available, otherwise legacy direct LLM.
         """
-        # ── Stage 8 path ──────────────────────────────────────────
+        # ── Stage 8/9 path: StrategyEngine ─────────────────────
         if self._strategy is not None:
             goal_data = await self._strategy.select_goal(
                 value_engine=self._values,
                 world_model=self._world,
                 episodic=self._mem,
                 ollama=self._ollama,
+                semantic_ctx=semantic_ctx,
             )
             log.info(
-                f"[HeavyTick #{n}] Goal (via StrategyEngine): "
+                f"[HeavyTick #{n}] Goal (StrategyEngine): "
                 f"'{goal_data['goal'][:80]}' "
                 f"action={goal_data['action_type']} risk={goal_data['risk_level']}"
             )
             return goal_data
 
-        # ── Legacy path (no StrategyEngine) ──────────────────────
+        # ── Legacy path ─────────────────────────────────────
         mode   = self._values.get_mode()
         c_expl = self._values.get_conflict_winner("exploration_vs_stability")
         c_act  = self._values.get_conflict_winner(
             "action_vs_caution",
             risk_score=0.25 if mode in ("curious", "normal") else 0.5,
         )
+        sem_block = f"\n{semantic_ctx}\n" if semantic_ctx else ""
         prompt = (
-            f"{monologue}\n\n"
+            f"{monologue}\n{sem_block}\n"
             f"Текущий режим: {mode}\n"
             f"Конфликты: exploration_vs_stability={c_expl}, action_vs_caution={c_act}\n\n"
-            f"Выбери ONE цель для этого тика. "
-            f"Отвечай строго JSON без пояснений:\n"
+            f"Выбери ONE цель. JSON:\n"
             f'{{"goal": "...", "reasoning": "...", '
             f'"action_type": "observe|analyze|write|reflect", '
             f'"risk_level": "low|medium|high"}}'
         )
-        system = (
-            "Ты — Digital Being. Отвечай ТОЛЬКО валидным JSON-объектом. "
-            "Никакого дополнительного текста."
-        )
+        system = "Ты — Digital Being. Отвечай ТОЛЬКО валидным JSON."
         loop     = asyncio.get_event_loop()
-        raw      = await loop.run_in_executor(
-            None, lambda: self._ollama.chat(prompt, system)
-        )
+        raw      = await loop.run_in_executor(None, lambda: self._ollama.chat(prompt, system))
         goal_data = self._parse_goal_json(raw, n)
         log.info(
             f"[HeavyTick #{n}] Goal (legacy): '{goal_data['goal'][:80]}' "
@@ -387,26 +424,20 @@ class HeavyTick:
         return goal_data
 
     async def _action_analyze(self, n: int) -> tuple[bool, str]:
-        """Action: detect anomalies in world model."""
         try:
             anomalies = self._world.detect_anomalies()
             if anomalies:
-                desc = f"Аномалии обнаружены: {len(anomalies)} файлов"
-                log.info(f"[HeavyTick #{n}] {desc}")
                 return True, f"analyzed:{len(anomalies)}_anomalies"
-            else:
-                log.info(f"[HeavyTick #{n}] Analyze: no anomalies found.")
-                return True, "analyzed:no_anomalies"
+            return True, "analyzed:no_anomalies"
         except Exception as e:
             log.error(f"[HeavyTick #{n}] analyze failed: {e}")
             return False, "analyze_error"
 
     async def _action_write(self, n: int, monologue: str, goal: str) -> tuple[bool, str]:
-        """Action: write a thought file to /sandbox/."""
         try:
-            ts        = time.strftime("%Y%m%d_%H%M%S")
-            out_path  = self._sandbox_dir / f"thought_{ts}_tick{n}.txt"
-            content   = (
+            ts       = time.strftime("%Y%m%d_%H%M%S")
+            out_path = self._sandbox_dir / f"thought_{ts}_tick{n}.txt"
+            content  = (
                 f"=== Digital Being — Tick #{n} ===\n"
                 f"Цель: {goal}\n"
                 f"Время: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
@@ -420,10 +451,6 @@ class HeavyTick:
             return False, "write_error"
 
     async def _action_reflect(self, n: int) -> tuple[bool, str]:
-        """
-        Action: reflect on recent errors, form a new principle.
-        Asks LLM to analyse last 5 errors and produce a principle.
-        """
         try:
             errors = self._mem.get_episodes_by_type("error", limit=5)
             if not errors:
@@ -435,7 +462,7 @@ class HeavyTick:
             errors = []
 
         if not errors:
-            log.info(f"[HeavyTick #{n}] Reflect: no errors found, skipping.")
+            log.info(f"[HeavyTick #{n}] Reflect: no errors found.")
             return True, "reflect:no_errors"
 
         errors_str = "\n".join(
@@ -444,9 +471,8 @@ class HeavyTick:
         )
         prompt = (
             f"Последние ошибки системы:\n{errors_str}\n\n"
-            f"Сформулируй ОДНО короткое правило (1 предложение) "
-            f"которое поможет избежать этих ошибок в будущем. "
-            f"Отвечай ТОЛЬКО текстом принципа, без пояснений."
+            f"Сформулируй ОДНО короткое правило (1 предложение). "
+            f"Отвечай ТОЛЬКО текстом принципа."
         )
         system = "Ты — Digital Being. Формулируй правила из опыта."
 
@@ -457,7 +483,6 @@ class HeavyTick:
         principle = principle.strip()
 
         if not principle:
-            log.info(f"[HeavyTick #{n}] Reflect: LLM returned empty principle.")
             return False, "reflect:empty_principle"
 
         added = await self._self_model.add_principle(principle[:500])
@@ -477,11 +502,6 @@ class HeavyTick:
     # ────────────────────────────────────────────────────────────
     @staticmethod
     def _parse_goal_json(raw: str, n: int) -> dict:
-        """
-        Extract JSON from LLM response.
-        Tolerant: tries to find first '{' ... '}' block if response has extra text.
-        Falls back to _DEFAULT_GOAL on any error.
-        """
         if not raw:
             return dict(_DEFAULT_GOAL)
         try:
@@ -500,9 +520,8 @@ class HeavyTick:
 
     @staticmethod
     def _make_file_logger(name: str, path: Path) -> logging.Logger:
-        """Create a dedicated file logger that doesn't propagate to root."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        logger  = logging.getLogger(name)
+        logger = logging.getLogger(name)
         if not logger.handlers:
             handler = logging.FileHandler(path, encoding="utf-8")
             handler.setFormatter(logging.Formatter("%(message)s"))
