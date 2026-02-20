@@ -262,7 +262,7 @@ class HeavyTick:
         should_write, reason = await loop.run_in_executor(
             None,
             lambda: self._social.should_initiate(
-                n, self._world, self._emotions, self._curiosity
+                n, self._mem, self._emotions, self._curiosity
             )
         )
         
