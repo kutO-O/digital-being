@@ -1,28 +1,8 @@
 """
 Digital Being — HeavyTick
-Stage 20: ContradictionResolver integration with verdict application.
+Stage 21: ShellExecutor integration with action_type="shell".
 
-Each tick executes in strict order (with per-tick timeout):
-  Step 1 — Internal Monologue  (always) + embed → VectorMemory
-  Step 2 — Goal Selection      via StrategyEngine + semantic context
-  Step 3 — Action
-  Step 4 — After-action (emotions, reflection, narrative triggers)
-  Step 5 — Curiosity: generate questions / seek answers
-  Step 6 — Self-Modification: suggest and apply config changes
-  Step 7 — Belief System: form and validate beliefs
-  Step 8 — Contradiction Resolver: detect and resolve contradictions + apply verdicts
-
-New in Stage 20:
-  - contradiction_resolver injected (optional)
-  - After belief system step:
-      • should_detect() → detect_contradictions() → add_contradiction()
-      • should_resolve() → resolve_contradiction() → _apply_verdict()
-  - _apply_verdict() modifies confidence scores based on verdict
-
-Resource budget:
-  - Max 3 LLM calls per tick (enforced by OllamaClient)
-  - Contradiction Resolver adds up to 4 extra LLM calls (detect + 3-step dialogue)
-  - Max 30 s per tick (asyncio.wait_for)
+Fix: Using belief_system.update_confidence() instead of direct dict modification.
 """
 
 from __future__ import annotations
@@ -49,6 +29,7 @@ if TYPE_CHECKING:
     from core.reflection_engine import ReflectionEngine
     from core.self_modification import SelfModificationEngine
     from core.self_model import SelfModel
+    from core.shell_executor import ShellExecutor
     from core.strategy_engine import StrategyEngine
     from core.value_engine import ValueEngine
     from core.world_model import WorldModel
@@ -87,7 +68,8 @@ class HeavyTick:
         curiosity_engine:  "CuriosityEngine | None"  = None,
         self_modification: "SelfModificationEngine | None" = None,
         belief_system:     "BeliefSystem | None"     = None,
-        contradiction_resolver: "ContradictionResolver | None" = None,  # Stage 20
+        contradiction_resolver: "ContradictionResolver | None" = None,
+        shell_executor:    "ShellExecutor | None"    = None,  # Stage 21
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -108,12 +90,11 @@ class HeavyTick:
         self._curiosity    = curiosity_engine
         self._self_mod     = self_modification
         self._beliefs      = belief_system
-        self._contradictions = contradiction_resolver  # Stage 20
+        self._contradictions = contradiction_resolver
+        self._shell_executor = shell_executor  # Stage 21
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
-        self._timeout     = int(
-            cfg.get("resources", {}).get("budget", {}).get("tick_timeout_sec", 30)
-        )
+        self._timeout     = int(cfg.get("resources", {}).get("budget", {}).get("tick_timeout_sec", 30))
         self._tick_count  = 0
         self._running     = False
         self._resume_incremented = False
@@ -126,12 +107,8 @@ class HeavyTick:
         _cur_cfg              = cfg.get("curiosity", {})
         self._curiosity_enabled = bool(_cur_cfg.get("enabled", True))
 
-        self._monologue_log = self._make_file_logger(
-            "digital_being.monologue", log_dir / "monologue.log"
-        )
-        self._decision_log = self._make_file_logger(
-            "digital_being.decisions", log_dir / "decisions.log"
-        )
+        self._monologue_log = self._make_file_logger("digital_being.monologue", log_dir / "monologue.log")
+        self._decision_log = self._make_file_logger("digital_being.decisions", log_dir / "decisions.log")
 
     async def start(self) -> None:
         self._running = True
@@ -152,11 +129,7 @@ class HeavyTick:
                 await asyncio.wait_for(self._run_tick(), timeout=self._timeout)
             except asyncio.TimeoutError:
                 log.error(f"[HeavyTick #{self._tick_count}] Timeout ({self._timeout}s) exceeded.")
-                self._mem.add_episode(
-                    "heavy_tick.timeout",
-                    f"Heavy tick #{self._tick_count} exceeded {self._timeout}s timeout",
-                    outcome="error",
-                )
+                self._mem.add_episode("heavy_tick.timeout", f"Heavy tick #{self._tick_count} exceeded {self._timeout}s timeout", outcome="error")
                 self._values.update_after_action(success=False)
                 await self._values._publish_changed()
                 self._update_emotions("heavy_tick.timeout", "failure")
@@ -179,14 +152,8 @@ class HeavyTick:
         mode = self._values.get_mode()
         if mode == "defensive":
             log.info(f"[HeavyTick #{n}] Mode=defensive — skipping goal selection.")
-            self._mem.add_episode(
-                "heavy_tick.defensive",
-                f"Tick #{n}: defensive mode, only monologue executed.",
-                outcome="skipped",
-            )
-            self._decision_log.info(
-                f"TICK #{n} | goal=observe(defensive) | action=none | outcome=skipped"
-            )
+            self._mem.add_episode("heavy_tick.defensive", f"Tick #{n}: defensive mode, only monologue executed.", outcome="skipped")
+            self._decision_log.info(f"TICK #{n} | goal=observe(defensive) | action=none | outcome=skipped")
             return
 
         semantic_ctx = await self._semantic_context(monologue)
@@ -211,6 +178,9 @@ class HeavyTick:
             success, outcome = await self._action_write(n, monologue, goal_text)
         elif action_type == "reflect":
             success, outcome = await self._action_reflect(n)
+        elif action_type == "shell":  # Stage 21
+            shell_cmd = goal_data.get("shell_command", "")
+            success, outcome = await self._action_shell(n, shell_cmd)
         else:
             log.warning(f"[HeavyTick #{n}] Unknown action_type='{action_type}'.")
             outcome = "observed"
@@ -219,229 +189,146 @@ class HeavyTick:
         await self._step_curiosity(n)
         await self._step_self_modification(n)
         await self._step_belief_system(n)
-        await self._step_contradiction_resolver(n)  # Stage 20
+        await self._step_contradiction_resolver(n)
 
     # ────────────────────────────────────────────────────────────────
-    # Stage 20: Contradiction Resolver step
+    # Stage 21: Shell Action
+    # ────────────────────────────────────────────────────────────────
+    async def _action_shell(self, n: int, shell_command: str) -> tuple[bool, str]:
+        """Выполнить shell команду через ShellExecutor."""
+        if not shell_command:
+            log.warning(f"[HeavyTick #{n}] Shell action with no command.")
+            return False, "shell:no_command"
+        
+        if self._shell_executor is None:
+            log.error(f"[HeavyTick #{n}] ShellExecutor not available.")
+            return False, "shell:executor_unavailable"
+        
+        log.info(f"[HeavyTick #{n}] Executing shell command: {shell_command[:80]}")
+        
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: self._shell_executor.execute_safe(shell_command, self._mem)
+        )
+        
+        if result["success"]:
+            # Store stdout in episodic memory (already done by execute_safe)
+            log.info(
+                f"[HeavyTick #{n}] Shell command executed successfully. "
+                f"exit_code={result['exit_code']} time={result.get('execution_time_ms', 0)}ms"
+            )
+            return True, f"shell:executed:{result['exit_code']}"
+        else:
+            log.warning(f"[HeavyTick #{n}] Shell command failed: {result.get('error', 'unknown')}")
+            return False, "shell:error"
+
+    # ────────────────────────────────────────────────────────────────
+    # Stage 20: Contradiction Resolver
     # ────────────────────────────────────────────────────────────────
     async def _step_contradiction_resolver(self, n: int) -> None:
-        """Обнаружение и разрешение противоречий между beliefs/principles."""
         if self._contradictions is None or self._beliefs is None:
             return
-
         loop = asyncio.get_event_loop()
-
-        # Detection: every 30 ticks
         if self._contradictions.should_detect(n):
             log.info(f"[HeavyTick #{n}] ContradictionResolver: detecting contradictions.")
             try:
                 beliefs = self._beliefs.get_beliefs(status="active")
                 principles = self._self_model.get_principles()
-                
                 contradictions = await loop.run_in_executor(
-                    None,
-                    lambda: self._contradictions.detect_contradictions(
-                        beliefs, principles, self._ollama
-                    ),
+                    None, lambda: self._contradictions.detect_contradictions(beliefs, principles, self._ollama)
                 )
-                
-                # Add up to 2 contradictions per cycle
                 for c in contradictions[:2]:
-                    added = self._contradictions.add_contradiction(
-                        c["type"], c["item_a"], c["item_b"]
-                    )
+                    added = self._contradictions.add_contradiction(c["type"], c["item_a"], c["item_b"])
                     if added:
-                        self._mem.add_episode(
-                            "contradiction.detected",
-                            f"[{c['type']}] {c['item_a']['text'][:60]} vs {c['item_b']['text'][:60]}",
-                            outcome="pending",
-                        )
-                
+                        self._mem.add_episode("contradiction.detected",
+                                              f"[{c['type']}] {c['item_a']['text'][:60]} vs {c['item_b']['text'][:60]}",
+                                              outcome="pending")
                 if contradictions:
-                    log.info(
-                        f"[HeavyTick #{n}] ContradictionResolver: "
-                        f"{len(contradictions)} contradiction(s) detected, "
-                        f"{len(contradictions[:2])} added."
-                    )
+                    log.info(f"[HeavyTick #{n}] ContradictionResolver: {len(contradictions)} detected, {len(contradictions[:2])} added.")
             except Exception as e:
                 log.error(f"[HeavyTick #{n}] ContradictionResolver detect error: {e}")
-
-        # Resolution: every 15 ticks if pending exists
         if self._contradictions.should_resolve(n):
             pending = self._contradictions.get_pending()
             if pending:
-                # Resolve oldest contradiction
                 c = pending[0]
-                log.info(
-                    f"[HeavyTick #{n}] ContradictionResolver: resolving "
-                    f"'{c['item_a']['text'][:40]} vs {c['item_b']['text'][:40]}'"
-                )
-                
+                log.info(f"[HeavyTick #{n}] ContradictionResolver: resolving '{c['item_a']['text'][:40]} vs {c['item_b']['text'][:40]}'")
                 try:
                     resolved = await loop.run_in_executor(
-                        None,
-                        lambda: self._contradictions.resolve_contradiction(
-                            c["id"], self._ollama
-                        ),
+                        None, lambda: self._contradictions.resolve_contradiction(c["id"], self._ollama)
                     )
-                    
                     if resolved:
-                        # Apply verdict to beliefs/principles
                         await self._apply_verdict(c["id"], n)
-                        log.info(
-                            f"[HeavyTick #{n}] ContradictionResolver: "
-                            f"resolution completed and applied."
-                        )
+                        log.info(f"[HeavyTick #{n}] ContradictionResolver: resolution completed and applied.")
                 except Exception as e:
                     log.error(f"[HeavyTick #{n}] ContradictionResolver resolve error: {e}")
 
     async def _apply_verdict(self, contradiction_id: str, tick: int) -> None:
-        """
-        Apply verdict from resolved contradiction to beliefs/principles.
-        Stage 20: This is where verdict actually modifies confidence scores.
-        """
-        # Find resolved contradiction
         resolved = self._contradictions.get_resolved(limit=50)
         contradiction = None
         for c in resolved:
             if c["id"] == contradiction_id:
                 contradiction = c
                 break
-        
         if not contradiction or not contradiction.get("resolution"):
             log.warning(f"_apply_verdict: contradiction {contradiction_id} not found or unresolved")
             return
-        
         resolution = contradiction["resolution"]
         verdict = resolution["verdict"]
-        item_a = contradiction["item_a"]
-        item_b = contradiction["item_b"]
-        
-        log.info(
-            f"Applying verdict '{verdict}' to contradiction: "
-            f"{item_a['text'][:30]} vs {item_b['text'][:30]}"
-        )
-        
+        item_a, item_b = contradiction["item_a"], contradiction["item_b"]
+        log.info(f"Applying verdict '{verdict}' to contradiction: {item_a['text'][:30]} vs {item_b['text'][:30]}")
         loop = asyncio.get_event_loop()
-        
-        # Apply based on verdict
         if verdict == "choose_a":
-            # A is correct, weaken B
             await self._modify_item_confidence(item_b, -0.3, loop)
-            self._mem.add_episode(
-                "contradiction.resolved",
-                f"Verdict: choose_a. Weakened: {item_b['text'][:100]}",
-                outcome="success",
-                data={"verdict": verdict, "weakened_id": item_b["id"]},
-            )
-            
+            self._mem.add_episode("contradiction.resolved", f"Verdict: choose_a. Weakened: {item_b['text'][:100]}",
+                                  outcome="success", data={"verdict": verdict, "weakened_id": item_b["id"]})
         elif verdict == "choose_b":
-            # B is correct, weaken A
             await self._modify_item_confidence(item_a, -0.3, loop)
-            self._mem.add_episode(
-                "contradiction.resolved",
-                f"Verdict: choose_b. Weakened: {item_a['text'][:100]}",
-                outcome="success",
-                data={"verdict": verdict, "weakened_id": item_a["id"]},
-            )
-            
+            self._mem.add_episode("contradiction.resolved", f"Verdict: choose_b. Weakened: {item_a['text'][:100]}",
+                                  outcome="success", data={"verdict": verdict, "weakened_id": item_a["id"]})
         elif verdict == "synthesis":
-            # Create new belief/principle combining both
             synthesis_text = resolution.get("synthesis_text", "")
             if synthesis_text:
                 await self._create_synthesis(item_a, item_b, synthesis_text, loop)
-                # Weaken both originals
                 await self._modify_item_confidence(item_a, -0.2, loop)
                 await self._modify_item_confidence(item_b, -0.2, loop)
-                self._mem.add_episode(
-                    "contradiction.resolved",
-                    f"Verdict: synthesis. Created: {synthesis_text[:100]}",
-                    outcome="success",
-                    data={"verdict": verdict, "synthesis": synthesis_text},
-                )
-            
+                self._mem.add_episode("contradiction.resolved", f"Verdict: synthesis. Created: {synthesis_text[:100]}",
+                                      outcome="success", data={"verdict": verdict, "synthesis": synthesis_text})
         elif verdict == "both_valid":
-            # Both valid in different contexts, no changes
-            self._mem.add_episode(
-                "contradiction.resolved",
-                f"Verdict: both_valid. No changes applied.",
-                outcome="success",
-                data={"verdict": verdict},
-            )
+            self._mem.add_episode("contradiction.resolved", f"Verdict: both_valid. No changes applied.",
+                                  outcome="success", data={"verdict": verdict})
 
-    async def _modify_item_confidence(
-        self, item: dict, delta: float, loop
-    ) -> None:
-        """Modify confidence of belief or principle."""
+    async def _modify_item_confidence(self, item: dict, delta: float, loop) -> None:
+        """Fix: Using belief_system.update_confidence() instead of direct modification."""
         item_type = item.get("type", "belief")
         item_id = item["id"]
-        
         if item_type == "belief" and self._beliefs:
-            # Find belief and update confidence
-            beliefs = self._beliefs.get_beliefs(status="active") + \
-                      self._beliefs.get_beliefs(status="strong") + \
-                      self._beliefs.get_beliefs(status="rejected")
-            
-            for b in beliefs:
-                if b["id"] == item_id:
-                    old_conf = b["confidence"]
-                    new_conf = max(0.0, min(1.0, old_conf + delta))
-                    
-                    # Update confidence in BeliefSystem
-                    # Note: BeliefSystem doesn't have direct update method,
-                    # so we modify and trigger re-save
-                    b["confidence"] = new_conf
-                    b["last_updated"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-                    
-                    # If confidence dropped below threshold, mark rejected
-                    if new_conf < 0.2 and b["status"] != "rejected":
-                        b["status"] = "rejected"
-                        self._beliefs._state["total_beliefs_rejected"] += 1
-                    
-                    # Save changes
-                    await loop.run_in_executor(None, self._beliefs._save)
-                    
-                    log.info(
-                        f"Updated belief confidence: {item['text'][:40]} "
-                        f"{old_conf:.2f} → {new_conf:.2f}"
-                    )
-                    break
-        
+            # Use update_confidence method
+            updated = await loop.run_in_executor(
+                None, lambda: self._beliefs.update_confidence(item_id, delta)
+            )
+            if updated:
+                log.info(f"Updated belief confidence via update_confidence(): {item['text'][:40]}")
         elif item_type == "principle":
-            # Principles don't have confidence scores in current implementation
-            # Could be extended in future to track principle strength
             log.debug(f"Principle confidence modification not implemented: {item_id}")
 
-    async def _create_synthesis(
-        self, item_a: dict, item_b: dict, synthesis_text: str, loop
-    ) -> None:
-        """Create new belief or principle from synthesis."""
-        # Determine type from items
+    async def _create_synthesis(self, item_a: dict, item_b: dict, synthesis_text: str, loop) -> None:
         if item_a.get("type") == "belief" or item_b.get("type") == "belief":
-            # Create new belief
             if self._beliefs:
-                # Determine category
                 if item_a.get("type") == "belief" and item_b.get("type") == "belief":
-                    # Both beliefs - use first's category or cause_effect if different
                     beliefs = self._beliefs.get_beliefs(status="active")
                     cat_a = next((b["category"] for b in beliefs if b["id"] == item_a["id"]), "cause_effect")
                     cat_b = next((b["category"] for b in beliefs if b["id"] == item_b["id"]), "cause_effect")
                     category = cat_a if cat_a == cat_b else "cause_effect"
                 else:
                     category = "cause_effect"
-                
                 added = self._beliefs.add_belief(synthesis_text, category, 0.6)
                 if added:
                     log.info(f"Created synthesis belief: {synthesis_text[:60]}")
         else:
-            # Create new principle
             added = await self._self_model.add_principle(synthesis_text)
             if added:
                 log.info(f"Created synthesis principle: {synthesis_text[:60]}")
-
-    # (Rest of the methods remain unchanged - copying from previous version)
-    # Including: _step_belief_system, _step_self_modification, _step_curiosity,
-    # _step_after_action, _step_monologue, _step_goal_selection, actions, etc.
 
     async def _step_belief_system(self, n: int) -> None:
         if self._beliefs is None:
@@ -501,8 +388,7 @@ class HeavyTick:
                 status = result.get("status", "unknown")
                 if status == "approved":
                     log.info(f"[HeavyTick #{n}] Config change APPROVED: {key} = {value} (was {result.get('old')})")
-                    self._mem.add_episode("self_modification.approved",
-                                          f"Config change: {key} = {value}. Reason: {reason[:200]}",
+                    self._mem.add_episode("self_modification.approved", f"Config change: {key} = {value}. Reason: {reason[:200]}",
                                           outcome="success")
                 else:
                     log.info(f"[HeavyTick #{n}] Config change REJECTED: {key} = {value}. Reason: {result.get('reason', '?')}")
@@ -729,9 +615,15 @@ class HeavyTick:
         em_block = f"\n{emotion_ctx}\n" if emotion_ctx else ""
         resume_block = f"\n{resume_ctx}\n" if resume_ctx else ""
         attn_block = f"\nЗначимые эпизоды:\n{attn_ctx}\n" if attn_ctx else ""
+        shell_hint = ""
+        if self._shell_executor is not None:
+            allowed_commands = ", ".join(self._shell_executor.get_allowed_commands())
+            shell_hint = (f"\nЕсли нужно активно исследовать среду — используй action_type=\"shell\" и укажи команду в \"shell_command\".\n"
+                          f"Доступные команды: {allowed_commands}\n"
+                          f'Пример: {{"goal": "проверить есть ли файл config.yaml", "action_type": "shell", "shell_command": "ls config.yaml"}}')
         prompt = (f"{monologue}\n{sem_block}{em_block}{resume_block}{attn_block}\nТекущий режим: {mode}\n"
-                  f"Конфликты: exploration_vs_stability={c_expl}, action_vs_caution={c_act}\n\nВыбери ONE цель. JSON:\n"
-                  f'{{"goal": "...", "reasoning": "...", "action_type": "observe|analyze|write|reflect", "risk_level": "low|medium|high"}}')
+                  f"Конфликты: exploration_vs_stability={c_expl}, action_vs_caution={c_act}\n{shell_hint}\nВыбери ONE цель. JSON:\n"
+                  f'{{"goal": "...", "reasoning": "...", "action_type": "observe|analyze|write|reflect|shell", "risk_level": "low|medium|high", "shell_command": "..."}}')
         system_parts = ["Ты — Digital Being. Отвечай ТОЛЬКО валидным JSON."]
         if focus_summary:
             system_parts.append(focus_summary)
