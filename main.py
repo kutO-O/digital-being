@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Phase 6: SelfModel + Milestones integrated.
+Phase 7: OllamaClient + HeavyTick. LightTick and HeavyTick run in parallel.
 """
 
 from __future__ import annotations
@@ -17,9 +17,11 @@ import yaml
 
 from core.event_bus import EventBus
 from core.file_monitor import FileMonitor
+from core.heavy_tick import HeavyTick
 from core.light_tick import LightTick
 from core.memory.episodic import EpisodicMemory
 from core.milestones import Milestones
+from core.ollama_client import OllamaClient
 from core.self_model import SelfModel
 from core.value_engine import ValueEngine
 from core.world_model import WorldModel
@@ -55,14 +57,15 @@ def setup_logging(cfg: dict) -> logging.Logger:
             logging.FileHandler(log_dir / "digital_being.log", encoding="utf-8"),
         ],
     )
-    actions_handler = logging.FileHandler(log_dir / "actions.log", encoding="utf-8")
-    actions_handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
-    logging.getLogger("digital_being.actions").addHandler(actions_handler)
+    # actions.log
+    a_handler = logging.FileHandler(log_dir / "actions.log", encoding="utf-8")
+    a_handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
+    logging.getLogger("digital_being.actions").addHandler(a_handler)
     return logging.getLogger("digital_being")
 
 
 def ensure_directories(cfg: dict) -> None:
-    for p in [
+    dirs = [
         Path(cfg["memory"]["episodic_db"]).parent,
         Path(cfg["memory"]["semantic_lance"]).parent,
         Path(cfg["logging"]["dir"]),
@@ -71,7 +74,9 @@ def ensure_directories(cfg: dict) -> None:
         Path(cfg["scores"]["drift"]["snapshot_dir"]),
         ROOT_DIR / "memory" / "self_snapshots",
         ROOT_DIR / "milestones",
-    ]:
+        ROOT_DIR / "sandbox",
+    ]
+    for p in dirs:
         p.mkdir(parents=True, exist_ok=True)
     for key in ("inbox", "outbox"):
         p = Path(cfg["paths"][key])
@@ -102,9 +107,6 @@ def bootstrap_from_seed(seed: dict, cfg: dict, logger: logging.Logger) -> None:
     with state_path.open("w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
     logger.info(f"First run: state bootstrapped as '{state['name']}'.")
-    logger.info(f"Starting scores: {state['scores']}")
-    logger.info(f"Pending tasks ({len(state['pending_tasks'])}): "
-                f"{[t['id'] for t in state['pending_tasks']]}")
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -120,24 +122,18 @@ def make_memory_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
     async def on_user_urgent(data: dict) -> None:
         text = data.get("text", "")
         logger.warning(f"[EVENT] user.urgent ⚡ → '{text[:120]}'")
-        # TODO Phase 7: interrupt heavy tick immediately on !URGENT
+        # TODO Phase 8: interrupt heavy tick on !URGENT
         mem.add_episode("urgent", text[:_MAX_DESC_LEN] or "(empty)",
                         data={"tick": data.get("tick")})
 
     async def on_file_changed(data: dict) -> None:
-        path = data.get("path", "?")
-        logger.debug(f"[EVENT] world.file_changed → {path}")
-        mem.add_episode("world.file_changed", f"File modified: {path}")
+        mem.add_episode("world.file_changed", f"File modified: {data.get('path','?')}")
 
     async def on_file_created(data: dict) -> None:
-        path = data.get("path", "?")
-        logger.debug(f"[EVENT] world.file_created → {path}")
-        mem.add_episode("world.file_created", f"File created: {path}")
+        mem.add_episode("world.file_created", f"File created: {data.get('path','?')}")
 
     async def on_file_deleted(data: dict) -> None:
-        path = data.get("path", "?")
-        logger.debug(f"[EVENT] world.file_deleted → {path}")
-        mem.add_episode("world.file_deleted", f"File deleted: {path}")
+        mem.add_episode("world.file_deleted", f"File deleted: {data.get('path','?')}")
 
     return {
         "user.message":       on_user_message,
@@ -151,22 +147,17 @@ def make_memory_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
 def make_world_handlers(logger: logging.Logger) -> dict:
     async def on_world_ready(data: dict) -> None:
         logger.info(f"[WorldModel] Ready. Indexed {data.get('file_count', '?')} files.")
-
     async def on_world_updated(data: dict) -> None:
         logger.debug(f"[WorldModel] Updated: {data.get('summary', '')}")
-
     return {"world.ready": on_world_ready, "world.updated": on_world_updated}
 
 
 def make_value_handlers(values: ValueEngine, mem: EpisodicMemory,
                         logger: logging.Logger) -> dict:
     async def on_value_changed(data: dict) -> None:
-        ctx = data.get("context", "")
-        logger.info(f"[ValueEngine] {ctx}")
-        warnings = values.check_drift()
-        for w in warnings:
+        logger.info(f"[ValueEngine] {data.get('context', '')}")
+        for w in values.check_drift():
             mem.add_episode("value.drift_warning", w[:_MAX_DESC_LEN])
-
     return {"value.changed": on_value_changed}
 
 
@@ -174,12 +165,11 @@ def make_self_handlers(self_model: SelfModel, mem: EpisodicMemory,
                        logger: logging.Logger) -> dict:
     async def on_self_drift_detected(data: dict) -> None:
         msg = (
-            f"Self drift detected: version {data.get('past_version')} → "
-            f"{data.get('current_version')} (Δ{data.get('delta')})"
+            f"Self drift: v{data.get('past_version')} → "
+            f"v{data.get('current_version')} (Δ{data.get('delta')})"
         )
         logger.warning(f"[SelfModel] {msg}")
         mem.add_episode("self.drift_detected", msg[:_MAX_DESC_LEN])
-
     return {"self.drift_detected": on_self_drift_detected}
 
 
@@ -189,6 +179,7 @@ def make_self_handlers(self_model: SelfModel, mem: EpisodicMemory,
 async def async_main(cfg: dict, logger: logging.Logger) -> None:
     loop       = asyncio.get_running_loop()
     state_path = Path(cfg["paths"]["state"])
+    log_dir    = Path(cfg["logging"]["dir"])
 
     # 1. EpisodicMemory
     mem = EpisodicMemory(Path(cfg["memory"]["episodic_db"]))
@@ -200,7 +191,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     principles = mem.get_active_principles()
     if principles:
-        logger.info(f"Active principles: {len(principles)}")
         for p in principles:
             logger.info(f"  • [{p['id']}] {p['text']}")
 
@@ -228,7 +218,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     milestones.load(ROOT_DIR / "milestones" / "milestones.json")
     milestones.subscribe()
 
-    # 6. Wire all EventBus handlers
+    # 6. OllamaClient
+    ollama = OllamaClient(cfg)
+    ollama_ok = ollama.is_available()
+    if ollama_ok:
+        logger.info("Ollama: ✅ available")
+    else:
+        logger.warning("Ollama: ❌ unavailable. HeavyTick will skip ticks until Ollama comes up.")
+
+    # 7. Wire all EventBus handlers
     for event_name, handler in make_memory_handlers(mem, logger).items():
         bus.subscribe(event_name, handler)
     for event_name, handler in make_world_handlers(logger).items():
@@ -238,38 +236,49 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     for event_name, handler in make_self_handlers(self_model, mem, logger).items():
         bus.subscribe(event_name, handler)
 
-    # 7. WorldModel
+    # 8. WorldModel
     world = WorldModel(bus=bus, mem=mem)
     world.subscribe()
 
-    # 8. FileMonitor
+    # 9. FileMonitor
     monitor = FileMonitor(watch_path=ROOT_DIR, bus=bus)
     monitor.start(loop)
 
-    # 9. LightTick
-    ticker    = LightTick(cfg=cfg, bus=bus)
-    tick_task = asyncio.create_task(ticker.start(), name="light_tick")
-
-    # 10. Initial world scan
-    file_count = await world.scan(ROOT_DIR)
-    mem.add_episode(
-        "world.scan",
-        f"Initial file scan complete: {file_count} files indexed",
-        outcome="success",
-        data={"file_count": file_count},
+    # 10. HeavyTick
+    heavy = HeavyTick(
+        cfg=cfg,
+        ollama=ollama,
+        world=world,
+        values=values,
+        self_model=self_model,
+        mem=mem,
+        milestones=milestones,
+        log_dir=log_dir,
+        sandbox_dir=ROOT_DIR / "sandbox",
     )
 
-    # 11. Startup banner
-    logger.info("=" * 50)
+    # 11. LightTick
+    ticker = LightTick(cfg=cfg, bus=bus)
+
+    # 12. Initial world scan
+    file_count = await world.scan(ROOT_DIR)
+    mem.add_episode("world.scan",
+                    f"Initial scan: {file_count} files",
+                    outcome="success",
+                    data={"file_count": file_count})
+
+    # 13. Startup banner
+    logger.info("=" * 56)
     logger.info(f"  World      : {world.summary()}")
     logger.info(f"  Values     : {values.to_prompt_context()}")
     logger.info(f"  Self v{self_model.get_version():<3}  : {self_model.get_identity()['name']}")
     logger.info(f"  Principles : {len(self_model.get_principles())}")
     logger.info(f"  {milestones.summary()}")
-    logger.info("=" * 50)
+    logger.info(f"  Ollama     : {'ok' if ollama_ok else 'unavailable'}")
+    logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 12. Shutdown signal
+    # 14. Launch ticks in parallel
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -282,18 +291,23 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         except NotImplementedError:
             signal.signal(sig, lambda s, f: stop_event.set())
 
+    light_task = asyncio.create_task(ticker.start(),  name="light_tick")
+    heavy_task = asyncio.create_task(heavy.start(),   name="heavy_tick")
+
     await stop_event.wait()
 
-    # 13. Graceful shutdown
+    # 15. Graceful shutdown
     ticker.stop()
+    heavy.stop()
     monitor.stop()
-    tick_task.cancel()
-    try:
-        await tick_task
-    except asyncio.CancelledError:
-        pass
 
-    # Final snapshots + drift checks
+    for task in (light_task, heavy_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
     values.save_weekly_snapshot()
     self_model.save_weekly_snapshot()
     await self_model.check_drift(values)
