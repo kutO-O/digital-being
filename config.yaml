@@ -1,9 +1,9 @@
 # Digital Being — System Configuration
-# Phase 3: Version bump to 0.3.0
+# Phase 4: Version bump to 0.4.0
 
 system:
   name: "digital_being"
-  version: "0.3.0"
+  version: "0.4.0"
   debug: false
 
 ticks:
