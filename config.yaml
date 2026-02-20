@@ -1,14 +1,55 @@
-# Digital Being — System Configuration
-# Stage 18: self-modification section added + reflection, narrative, curiosity
-
 system:
-  name: "digital_being"
-  version: "0.18.0"
-  debug: false
+  version: "0.21.0"
 
 ticks:
-  light_tick_sec: 3
-  heavy_tick_sec: 45
+  light_tick_sec: 5
+  heavy_tick_sec: 60
+
+memory:
+  episodic_db: "memory/episodic.db"
+  semantic_lance: "memory/semantic.lance"
+
+logging:
+  dir: "logs"
+  level: "INFO"
+
+paths:
+  state: "memory/state.json"
+  snapshots: "memory/snapshots"
+  inbox: "inbox.txt"
+  outbox: "outbox.txt"
+
+ollama:
+  base_url: "http://localhost:11434"
+  strategy_model: "llama3.2:3b"
+  embed_model: "nomic-embed-text"
+
+scores:
+  drift:
+    threshold: 0.15
+    snapshot_dir: "memory/value_snapshots"
+    enabled: true
+    weekly: true
+
+world:
+  watch_dirs:
+    - "."
+  ignore_patterns:
+    - "*.pyc"
+    - "__pycache__"
+    - ".git"
+    - "*.log"
+    - "*.db"
+
+api:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8765
+
+resources:
+  budget:
+    tick_timeout_sec: 30
+    max_llm_calls_per_tick: 3
 
 dream:
   enabled: true
@@ -20,56 +61,17 @@ reflection:
 narrative:
   every_n_ticks: 15
 
-curiosity:
-  enabled: true
-  ask_every_n_ticks: 5
-  max_open_questions: 10
-
-api:
-  host: "127.0.0.1"
-  port: 8765
-  enabled: true
-
-ollama:
-  strategy_model: "llama3.2"
-  embed_model: "nomic-embed-text"
-  base_url: "http://localhost:11434"
-  timeout_sec: 30
-
-memory:
-  episodic_db: "./memory/episodic.db"
-  semantic_lance: "./memory/semantic_lance"
-
-scores:
-  thresholds:
-    stability_warn: 0.5
-    accuracy_warn: 0.5
-    growth_warn: 0.3
-  drift:
-    max_weekly_change: 0.3
-    snapshot_dir: "./memory/drift_snapshots"
-
-resources:
-  budget:
-    max_llm_calls: 3
-    max_actions: 2
-    max_memory_writes: 10
-    tick_timeout_sec: 30
-
-logging:
-  dir: "./logs"
-  level: "INFO"
-  max_bytes: 5242880
-  backup_count: 3
-
-paths:
-  seed: "./seed.yaml"
-  state: "./memory/state.json"
-  snapshots: "./memory/snapshots"
-  inbox: "./inbox.txt"
-  outbox: "./outbox.txt"
-
 attention:
   top_k: 5
   min_score: 0.4
   max_context_chars: 1500
+
+curiosity:
+  enabled: true
+  ask_every_n_ticks: 12
+  answer_every_n_ticks: 8
+
+shell:
+  enabled: true
+  allowed_dir: "."
+  max_output_chars: 2000

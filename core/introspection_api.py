@@ -1,24 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 20: Complete with /beliefs and /contradictions endpoints.
-
-Endpoints (all GET, all return JSON unless noted):
-  /status         — uptime, tick_count, mode, current goal, goal_stats, attention_focus
-  /memory         — episode count, vector count, recent episodes
-  /values         — scores, mode, conflicts
-  /strategy       — three planning horizons
-  /milestones     — achieved / pending milestones
-  /dream          — Dream Mode state and next-run ETA
-  /episodes       — filtered episode search (?limit=20&event_type=...)
-  /search         — semantic search via VectorMemory (?q=text&top_k=5)
-  /emotions       — current emotional state, dominant emotion, tone modifier
-  /reflection     — last 5 reflections + total count
-  /diary          — last N diary entries from narrative_log.json
-  /diary/raw      — full diary.md as text/plain
-  /curiosity      — open questions + stats
-  /modifications  — config modification history + stats
-  /beliefs        — active and strong beliefs + stats [Stage 19]
-  /contradictions — pending and resolved contradictions + stats [Stage 20]
+Stage 21: Added /shell/stats and /shell/execute endpoints.
 """
 
 from __future__ import annotations
@@ -48,12 +30,13 @@ if TYPE_CHECKING:
     from core.ollama_client import OllamaClient
     from core.reflection_engine import ReflectionEngine
     from core.self_modification import SelfModificationEngine
+    from core.shell_executor import ShellExecutor
     from core.strategy_engine import StrategyEngine
     from core.value_engine import ValueEngine
 
 log = logging.getLogger("digital_being.introspection_api")
 
-_CORS_HEADERS = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type"}
+_CORS_HEADERS = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type"}
 
 class IntrospectionAPI:
     def __init__(self, host: str, port: int, components: dict, start_time: float) -> None:
@@ -81,6 +64,8 @@ class IntrospectionAPI:
         app.router.add_get("/modifications", self._handle_modifications)
         app.router.add_get("/beliefs", self._handle_beliefs)
         app.router.add_get("/contradictions", self._handle_contradictions)
+        app.router.add_get("/shell/stats", self._handle_shell_stats)  # Stage 21
+        app.router.add_post("/shell/execute", self._handle_shell_execute)  # Stage 21
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
@@ -103,6 +88,36 @@ class IntrospectionAPI:
             raise
         response.headers.update(_CORS_HEADERS)
         return response
+
+    async def _handle_shell_stats(self, request: web.Request) -> web.Response:
+        """GET /shell/stats - Stage 21"""
+        try:
+            shell = self._c.get("shell_executor")
+            if not shell:
+                return self._json({"error": "ShellExecutor not available"})
+            stats = shell.get_stats()
+            allowed_commands = shell.get_allowed_commands()
+            allowed_dir = shell.get_allowed_dir()
+            payload = {"stats": stats, "allowed_commands": allowed_commands, "allowed_dir": allowed_dir}
+            return self._json(payload)
+        except Exception as e:
+            return self._error(e)
+
+    async def _handle_shell_execute(self, request: web.Request) -> web.Response:
+        """POST /shell/execute - Stage 21"""
+        try:
+            shell = self._c.get("shell_executor")
+            mem = self._c.get("episodic")
+            if not shell or not mem:
+                return self._json({"error": "ShellExecutor or EpisodicMemory not available"})
+            data = await request.json()
+            command = data.get("command", "")
+            if not command:
+                return self._json({"error": "Missing command"})
+            result = shell.execute_safe(command, mem)
+            return self._json(result)
+        except Exception as e:
+            return self._error(e)
 
     async def _handle_status(self, request: web.Request) -> web.Response:
         try:
