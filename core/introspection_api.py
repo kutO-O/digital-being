@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 11: Read-only HTTP observation layer.
+Stage 12: /emotions endpoint added.
 
 Endpoints (all GET, all return JSON):
   /status      — uptime, tick_count, mode, current goal
@@ -11,6 +11,7 @@ Endpoints (all GET, all return JSON):
   /dream       — Dream Mode state and next-run ETA
   /episodes    — filtered episode search (?limit=20&event_type=...)
   /search      — semantic search via VectorMemory (?q=text&top_k=5)
+  /emotions    — current emotional state, dominant emotion, tone modifier [Stage 12]
 
 Design rules:
   - Pure read — no mutations
@@ -33,6 +34,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from core.dream_mode import DreamMode
+    from core.emotion_engine import EmotionEngine
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
@@ -98,6 +100,7 @@ class IntrospectionAPI:
         app.router.add_get("/dream",      self._handle_dream)
         app.router.add_get("/episodes",   self._handle_episodes)
         app.router.add_get("/search",     self._handle_search)
+        app.router.add_get("/emotions",   self._handle_emotions)   # Stage 12
 
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -160,7 +163,7 @@ class IntrospectionAPI:
             for ep in recent:
                 ep.pop("data", None)
             payload = {
-                "episodic_count": self._episode_count(episodic),
+                "episodic_count": episodic.count(),
                 "vector_count":   vm.count(),
                 "recent_episodes": recent,
             }
@@ -276,6 +279,27 @@ class IntrospectionAPI:
         except Exception as e:
             return self._error(e)
 
+    async def _handle_emotions(self, request: web.Request) -> web.Response:
+        """GET /emotions — Stage 12: return current emotional state."""
+        try:
+            ee = self._c.get("emotion_engine")
+            if ee is None:
+                return self._json({
+                    "state":         {},
+                    "dominant":      [None, 0.0],
+                    "tone_modifier": "",
+                    "note":          "EmotionEngine not available",
+                })
+            dominant_name, dominant_val = ee.get_dominant()
+            payload = {
+                "state":         ee.get_state(),
+                "dominant":      [dominant_name, dominant_val],
+                "tone_modifier": ee.get_tone_modifier(),
+            }
+            return self._json(payload)
+        except Exception as e:
+            return self._error(e)
+
     # ──────────────────────────────────────────────────────────────
     # Helpers
     # ──────────────────────────────────────────────────────────────
@@ -292,13 +316,3 @@ class IntrospectionAPI:
             content_type="application/json",
             status=500,
         )
-
-    @staticmethod
-    def _episode_count(episodic: "EpisodicMemory") -> int:
-        try:
-            row = episodic._conn.execute(
-                "SELECT COUNT(*) as cnt FROM episodes"
-            ).fetchone()
-            return row["cnt"] if row else 0
-        except Exception:
-            return 0

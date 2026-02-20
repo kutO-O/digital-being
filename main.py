@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 11: IntrospectionAPI added.
+Stage 12: EmotionEngine added.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 
 from core.dream_mode import DreamMode
+from core.emotion_engine import EmotionEngine
 from core.event_bus import EventBus
 from core.file_monitor import FileMonitor
 from core.heavy_tick import HeavyTick
@@ -340,7 +341,17 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         interval_hours=dream_interval,
     )
 
-    # 13. HeavyTick
+    # 13. EmotionEngine  ← Stage 12
+    emotion_engine = EmotionEngine(memory_dir=ROOT_DIR / "memory")
+    emotion_engine.load()
+    dominant_name, dominant_val = emotion_engine.get_dominant()
+    logger.info(
+        f"EmotionEngine ready. "
+        f"Dominant: {dominant_name}({dominant_val:.2f}) | "
+        f"Tone: {emotion_engine.get_tone_modifier()}"
+    )
+
+    # 14. HeavyTick
     heavy = HeavyTick(
         cfg=cfg,
         ollama=ollama,
@@ -353,12 +364,13 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         sandbox_dir=ROOT_DIR / "sandbox",
         strategy=strategy,
         vector_memory=vector_mem,
+        emotion_engine=emotion_engine,   # Stage 12
     )
 
-    # 14. LightTick
+    # 15. LightTick
     ticker = LightTick(cfg=cfg, bus=bus)
 
-    # 15. IntrospectionAPI (Stage 11)
+    # 16. IntrospectionAPI (Stage 11 + Stage 12: emotion_engine added)
     api_cfg     = cfg.get("api", {})
     api_enabled = api_cfg.get("enabled", True)
     api = IntrospectionAPI(
@@ -374,20 +386,21 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "dream_mode":      dream,
             "ollama":          ollama,
             "heavy_tick":      heavy,
+            "emotion_engine":  emotion_engine,   # Stage 12
         },
         start_time=start_time,
     )
     if api_enabled:
         await api.start()
 
-    # 16. Initial world scan
+    # 17. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode("world.scan",
                     f"Initial scan: {file_count} files",
                     outcome="success",
                     data={"file_count": file_count})
 
-    # 17. Startup banner
+    # 18. Startup banner
     logger.info("=" * 56)
     logger.info(f"  World        : {world.summary()}")
     logger.info(f"  Values       : {values.to_prompt_context()}")
@@ -397,12 +410,13 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  Strategy     : {strategy.to_prompt_context()!r:.120}")
     logger.info(f"  Vectors      : {vector_mem.count()} stored")
     logger.info(f"  DreamMode    : {'enabled' if dream_enabled else 'disabled'}, interval={dream_interval}h")
+    logger.info(f"  EmotionEngine: dominant={dominant_name}({dominant_val:.2f})")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 18. Launch all tasks
+    # 19. Launch all tasks
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -425,7 +439,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     await stop_event.wait()
 
-    # 19. Graceful shutdown
+    # 20. Graceful shutdown
     ticker.stop()
     heavy.stop()
     monitor.stop()

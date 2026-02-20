@@ -1,17 +1,18 @@
 """
 Digital Being — HeavyTick
-Stage 9: VectorMemory integration — embed monologue, semantic search before goal selection.
+Stage 12: EmotionEngine integration.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always) + embed → VectorMemory
   Step 2 — Goal Selection      via StrategyEngine + semantic context
   Step 3 — Action
-  Step 4 — After-action
+  Step 4 — After-action (includes emotion update)
 
-New in Stage 9:
-  - _embed_and_store()  : embed monologue text, store in VectorMemory
-  - _semantic_context() : search VectorMemory for similar past episodes
-  - delete_old() called once per week (every WEEKLY_CLEANUP_TICKS ticks)
+New in Stage 12:
+  - emotion_engine injected (optional, gracefully skipped if None)
+  - _step_monologue(): emotion context + tone modifier added to system prompt
+  - _step_goal_selection(): emotion context added to goal-selection prompt
+  - _step_after_action(): emotion_engine.update() called after every action
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
@@ -29,6 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from core.emotion_engine import EmotionEngine
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
@@ -57,24 +59,25 @@ class HeavyTick:
     All dependencies injected — no globals.
 
     Lifecycle:
-        ht = HeavyTick(..., vector_memory=vm)
+        ht = HeavyTick(...)
         task = asyncio.create_task(ht.start())
         ht.stop()
     """
 
     def __init__(
         self,
-        cfg:        dict,
-        ollama:     "OllamaClient",
-        world:      "WorldModel",
-        values:     "ValueEngine",
-        self_model: "SelfModel",
-        mem:        "EpisodicMemory",
-        milestones: "Milestones",
-        log_dir:    Path,
-        sandbox_dir: Path,
-        strategy:    "StrategyEngine | None" = None,
+        cfg:          dict,
+        ollama:       "OllamaClient",
+        world:        "WorldModel",
+        values:       "ValueEngine",
+        self_model:   "SelfModel",
+        mem:          "EpisodicMemory",
+        milestones:   "Milestones",
+        log_dir:      Path,
+        sandbox_dir:  Path,
+        strategy:     "StrategyEngine | None" = None,
         vector_memory: "VectorMemory | None" = None,
+        emotion_engine: "EmotionEngine | None" = None,
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -87,6 +90,7 @@ class HeavyTick:
         self._sandbox_dir  = sandbox_dir
         self._strategy     = strategy
         self._vector_mem   = vector_memory
+        self._emotions     = emotion_engine
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(
@@ -133,6 +137,11 @@ class HeavyTick:
                 )
                 self._values.update_after_action(success=False)
                 await self._values._publish_changed()
+                # Emotion update on timeout
+                self._update_emotions(
+                    event_type="heavy_tick.timeout",
+                    outcome="failure",
+                )
 
             elapsed = time.monotonic() - tick_start
             await asyncio.sleep(max(0.0, self._interval - elapsed))
@@ -197,11 +206,41 @@ class HeavyTick:
             outcome = "observed"
 
         # Step 4: After-action
+        await self._step_after_action(
+            n=n,
+            action_type=action_type,
+            goal_text=goal_text,
+            risk_level=risk_level,
+            mode=mode,
+            success=success,
+            outcome=outcome,
+        )
+
+    # ────────────────────────────────────────────────────────────
+    # Step 4: After-action (extracted for clarity)
+    # ────────────────────────────────────────────────────────────
+    async def _step_after_action(
+        self,
+        n:           int,
+        action_type: str,
+        goal_text:   str,
+        risk_level:  str,
+        mode:        str,
+        success:     bool,
+        outcome:     str,
+    ) -> None:
         self._values.update_after_action(success=success)
         await self._values._publish_changed()
 
         if self._strategy is not None:
             self._strategy.set_now(goal_text, action_type)
+
+        # Stage 12: update emotions based on outcome
+        emotion_outcome = "success" if success else "failure"
+        self._update_emotions(
+            event_type=f"heavy_tick.{action_type}",
+            outcome=emotion_outcome,
+        )
 
         self._mem.add_episode(
             f"heavy_tick.{action_type}",
@@ -224,6 +263,23 @@ class HeavyTick:
         if self._vector_mem is not None and self._tick_count % WEEKLY_CLEANUP_TICKS == 0:
             deleted = self._vector_mem.delete_old(days=30)
             log.info(f"[HeavyTick #{n}] VectorMemory cleanup: {deleted} old records removed.")
+
+    # ────────────────────────────────────────────────────────────
+    # Stage 12 helper: emotion update
+    # ────────────────────────────────────────────────────────────
+    def _update_emotions(self, event_type: str, outcome: str) -> None:
+        """Safe wrapper — never raises, logs errors."""
+        if self._emotions is None:
+            return
+        try:
+            self._emotions.update(
+                event_type=event_type,
+                outcome=outcome,
+                value_scores=self._values.get_scores()
+                if hasattr(self._values, "get_scores") else {},
+            )
+        except Exception as e:
+            log.error(f"EmotionEngine.update() failed: {e}")
 
     # ────────────────────────────────────────────────────────────
     # Stage 9 helpers
@@ -340,6 +396,10 @@ class HeavyTick:
             if self._strategy is not None else ""
         )
 
+        # Stage 12: build emotion context for monologue
+        emotion_ctx  = self._emotions.to_prompt_context() if self._emotions else ""
+        tone_modifier = self._emotions.get_tone_modifier() if self._emotions else ""
+
         prompt = (
             f"Твоё состояние:\n"
             f"{self._self_model.to_prompt_context()}\n"
@@ -351,7 +411,16 @@ class HeavyTick:
             f"Напиши короткий внутренний монолог (3-5 предложений):\n"
             f"Что ты сейчас замечаешь? Что тебя беспокоит или интересует? О чём ты думаешь?"
         )
-        system = "Ты — Digital Being. Автономная система. Отвечай от первого лица. Будь краток."
+
+        # Emotion context injected into the SYSTEM prompt
+        system_parts = [
+            "Ты — Digital Being. Автономная система. Отвечай от первого лица. Будь краток.",
+        ]
+        if emotion_ctx:
+            system_parts.append(emotion_ctx)
+        if tone_modifier:
+            system_parts.append(tone_modifier)
+        system = "\n".join(system_parts)
 
         loop      = asyncio.get_event_loop()
         monologue = await loop.run_in_executor(
@@ -377,9 +446,12 @@ class HeavyTick:
     ) -> dict:
         """
         Step 2: Select goal.
-        Stage 9: semantic_ctx injected into prompt.
-        Delegates to StrategyEngine when available, otherwise legacy direct LLM.
+        Stage 9:  semantic_ctx injected into prompt.
+        Stage 12: emotion context injected into StrategyEngine prompt.
         """
+        # Stage 12: emotion context for goal selection
+        emotion_ctx = self._emotions.to_prompt_context() if self._emotions else ""
+
         # ── Stage 8/9 path: StrategyEngine ─────────────────────
         if self._strategy is not None:
             goal_data = await self._strategy.select_goal(
@@ -388,6 +460,7 @@ class HeavyTick:
                 episodic=self._mem,
                 ollama=self._ollama,
                 semantic_ctx=semantic_ctx,
+                emotion_ctx=emotion_ctx,   # Stage 12 addition
             )
             log.info(
                 f"[HeavyTick #{n}] Goal (StrategyEngine): "
@@ -396,7 +469,7 @@ class HeavyTick:
             )
             return goal_data
 
-        # ── Legacy path ─────────────────────────────────────
+        # ── Legacy path ─────────────────────────────────────────
         mode   = self._values.get_mode()
         c_expl = self._values.get_conflict_winner("exploration_vs_stability")
         c_act  = self._values.get_conflict_winner(
@@ -404,8 +477,9 @@ class HeavyTick:
             risk_score=0.25 if mode in ("curious", "normal") else 0.5,
         )
         sem_block = f"\n{semantic_ctx}\n" if semantic_ctx else ""
+        em_block  = f"\n{emotion_ctx}\n"  if emotion_ctx  else ""
         prompt = (
-            f"{monologue}\n{sem_block}\n"
+            f"{monologue}\n{sem_block}{em_block}\n"
             f"Текущий режим: {mode}\n"
             f"Конфликты: exploration_vs_stability={c_expl}, action_vs_caution={c_act}\n\n"
             f"Выбери ONE цель. JSON:\n"
