@@ -1,5 +1,5 @@
 system:
-  version: "Stage 23 - Social Interaction Layer"
+  version: "Stage 24 - Meta-Cognition Layer"
 
 ticks:
   light_tick_sec: 5
@@ -142,3 +142,10 @@ social:
   enabled: true
   check_inbox_every_tick: true
   initiate_after_ticks: 200
+
+# Stage 24
+meta_cognition:
+  enabled: true
+  analyze_every_ticks: 50
+  max_insights: 30
+  min_confidence: 0.4
