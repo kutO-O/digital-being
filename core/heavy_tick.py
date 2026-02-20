@@ -36,7 +36,8 @@ if TYPE_CHECKING:
     from core.time_perception import TimePerception
     from core.value_engine import ValueEngine
     from core.world_model import WorldModel
-
+    from core.meta_cognition import MetaCognition
+    
 log = logging.getLogger("digital_being.heavy_tick")
 
 WEEKLY_CLEANUP_TICKS = 1008
@@ -75,6 +76,7 @@ class HeavyTick:
         shell_executor:    "ShellExecutor | None"    = None,
         time_perception:   "TimePerception | None"   = None,
         social_layer:      "SocialLayer | None"      = None,  # Stage 23
+        meta_cognition: "MetaCognition | None" = None,
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -99,7 +101,8 @@ class HeavyTick:
         self._shell_executor = shell_executor
         self._time_perc    = time_perception
         self._social       = social_layer  # Stage 23
-
+        self._meta_cog = meta_cognition  # Stage 24
+        
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(cfg.get("resources", {}).get("budget", {}).get("tick_timeout_sec", 30))
         self._tick_count  = 0
@@ -203,13 +206,60 @@ class HeavyTick:
         await self._step_contradiction_resolver(n)
         await self._step_time_perception(n)
         await self._step_social_interaction(n)  # Stage 23
+        await self._step_meta_cognition(n)  # Stage 24
 
     # ────────────────────────────────────────────────────────────────
     # Stage 23: Social Interaction
     # ────────────────────────────────────────────────────────────────
-    async def _step_social_interaction(self, n: int) -> None:
-        if self._social is None:
-            return
+    # ────────────────────────────────────────────────────────────────
+# Stage 24: Meta-Cognition
+# ────────────────────────────────────────────────────────────────
+async def _step_meta_cognition(self, n: int) -> None:
+    """Stage 24: Analyze decision quality and discover cognitive patterns."""
+    if self._meta_cog is None:
+        return
+    
+    loop = asyncio.get_event_loop()
+    
+    # Periodic analysis
+    if self._meta_cog.should_analyze(n):
+        log.info(f"[HeavyTick #{n}] MetaCognition: analyzing decision quality.")
+        try:
+            episodes = self._mem.get_recent_episodes(20)
+            quality = await loop.run_in_executor(
+                None, lambda: self._meta_cog.analyze_decision_quality(episodes, self._ollama)
+            )
+            
+            if quality:
+                log.info(
+                    f"[HeavyTick #{n}] MetaCognition: "
+                    f"reasoning={quality.get('reasoning_quality', 0):.2f}, "
+                    f"confusion={quality.get('confusion_level', 0):.2f}"
+                )
+                
+                # Detect cognitive patterns
+                beliefs = self._beliefs.get_beliefs() if self._beliefs else []
+                insights = await loop.run_in_executor(
+                    None,
+                    lambda: self._meta_cog.detect_cognitive_patterns(
+                        episodes, beliefs, self._ollama
+                    )
+                )
+                
+                for ins in insights[:2]:
+                    self._meta_cog.add_insight(
+                        ins["insight_type"],
+                        ins["description"],
+                        [],  # evidence episode IDs can be added later
+                        ins.get("confidence", 0.5),
+                        ins.get("impact", "medium")
+                    )
+                
+                if insights:
+                    log.info(f"[HeavyTick #{n}] MetaCognition: {len(insights)} insight(s) discovered.")
+        
+        except Exception as e:
+            log.error(f"[HeavyTick #{n}] MetaCognition error: {e}")
         
         loop = asyncio.get_event_loop()
         
@@ -302,6 +352,9 @@ class HeavyTick:
         
         if self._time_perc:
             parts.append(self._time_perc.to_prompt_context(2))
+
+        if self._meta_cog:  # ← ADD THIS
+            parts.append(self._meta_cog.to_prompt_context(2))
         
         return "\n".join(parts)
 
