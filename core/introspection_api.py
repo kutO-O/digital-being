@@ -1,21 +1,22 @@
 """
 Digital Being — IntrospectionAPI
-Stage 17: /curiosity endpoint added; curiosity_engine added to components.
+Stage 18: /modifications endpoint added; self_modification added to components.
 
 Endpoints (all GET, all return JSON unless noted):
-  /status      — uptime, tick_count, mode, current goal, goal_stats, attention_focus [Stage 16]
-  /memory      — episode count, vector count, recent episodes
-  /values      — scores, mode, conflicts
-  /strategy    — three planning horizons
-  /milestones  — achieved / pending milestones
-  /dream       — Dream Mode state and next-run ETA
-  /episodes    — filtered episode search (?limit=20&event_type=...)
-  /search      — semantic search via VectorMemory (?q=text&top_k=5)
-  /emotions    — current emotional state, dominant emotion, tone modifier [Stage 12]
-  /reflection  — last 5 reflections + total count [Stage 13]
-  /diary       — last N diary entries from narrative_log.json [Stage 14]
-  /diary/raw   — full diary.md as text/plain [Stage 14]
-  /curiosity   — open questions + stats [Stage 17]
+  /status         — uptime, tick_count, mode, current goal, goal_stats, attention_focus [Stage 16]
+  /memory         — episode count, vector count, recent episodes
+  /values         — scores, mode, conflicts
+  /strategy       — three planning horizons
+  /milestones     — achieved / pending milestones
+  /dream          — Dream Mode state and next-run ETA
+  /episodes       — filtered episode search (?limit=20&event_type=...)
+  /search         — semantic search via VectorMemory (?q=text&top_k=5)
+  /emotions       — current emotional state, dominant emotion, tone modifier [Stage 12]
+  /reflection     — last 5 reflections + total count [Stage 13]
+  /diary          — last N diary entries from narrative_log.json [Stage 14]
+  /diary/raw      — full diary.md as text/plain [Stage 14]
+  /curiosity      — open questions + stats [Stage 17]
+  /modifications  — config modification history + stats [Stage 18]
 
 Design rules:
   - Pure read — no mutations
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from core.narrative_engine import NarrativeEngine
     from core.ollama_client import OllamaClient
     from core.reflection_engine import ReflectionEngine
+    from core.self_modification import SelfModificationEngine
     from core.strategy_engine import StrategyEngine
     from core.value_engine import ValueEngine
 
@@ -101,19 +103,20 @@ class IntrospectionAPI:
             return
 
         app = web.Application(middlewares=[self._cors_middleware])
-        app.router.add_get("/status",     self._handle_status)
-        app.router.add_get("/memory",     self._handle_memory)
-        app.router.add_get("/values",     self._handle_values)
-        app.router.add_get("/strategy",   self._handle_strategy)
-        app.router.add_get("/milestones", self._handle_milestones)
-        app.router.add_get("/dream",      self._handle_dream)
-        app.router.add_get("/episodes",   self._handle_episodes)
-        app.router.add_get("/search",     self._handle_search)
-        app.router.add_get("/emotions",   self._handle_emotions)   # Stage 12
-        app.router.add_get("/reflection", self._handle_reflection) # Stage 13
-        app.router.add_get("/diary",      self._handle_diary)      # Stage 14
-        app.router.add_get("/diary/raw",  self._handle_diary_raw)  # Stage 14
-        app.router.add_get("/curiosity",  self._handle_curiosity)  # Stage 17
+        app.router.add_get("/status",        self._handle_status)
+        app.router.add_get("/memory",        self._handle_memory)
+        app.router.add_get("/values",        self._handle_values)
+        app.router.add_get("/strategy",      self._handle_strategy)
+        app.router.add_get("/milestones",    self._handle_milestones)
+        app.router.add_get("/dream",         self._handle_dream)
+        app.router.add_get("/episodes",      self._handle_episodes)
+        app.router.add_get("/search",        self._handle_search)
+        app.router.add_get("/emotions",      self._handle_emotions)      # Stage 12
+        app.router.add_get("/reflection",    self._handle_reflection)    # Stage 13
+        app.router.add_get("/diary",         self._handle_diary)         # Stage 14
+        app.router.add_get("/diary/raw",     self._handle_diary_raw)     # Stage 14
+        app.router.add_get("/curiosity",     self._handle_curiosity)     # Stage 17
+        app.router.add_get("/modifications", self._handle_modifications) # Stage 18
 
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -409,6 +412,33 @@ class IntrospectionAPI:
             payload = {
                 "open_questions": open_questions,
                 "stats":          ce.get_stats(),
+            }
+            return self._json(payload)
+        except Exception as e:
+            return self._error(e)
+
+    async def _handle_modifications(self, request: web.Request) -> web.Response:
+        """GET /modifications?limit=10 — Stage 18: config modification history."""
+        try:
+            sm = self._c.get("self_modification")
+            if sm is None:
+                return self._json({
+                    "history":      [],
+                    "allowed_keys": [],
+                    "stats":        {},
+                    "note":         "SelfModificationEngine not available",
+                })
+            limit = min(int(request.rel_url.query.get("limit", 10)), 50)
+            history = sm.get_history(limit)
+            stats = sm.get_stats()
+            
+            # Import ALLOWED_KEYS from self_modification module
+            from core.self_modification import ALLOWED_KEYS
+            
+            payload = {
+                "history":      history,
+                "allowed_keys": list(ALLOWED_KEYS),
+                "stats":        stats,
             }
             return self._json(payload)
         except Exception as e:
