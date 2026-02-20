@@ -1,9 +1,9 @@
 # Digital Being — System Configuration
-# Stage 10: dream section added
+# Stage 11: api section added
 
 system:
   name: "digital_being"
-  version: "0.10.0"
+  version: "0.11.0"
   debug: false
 
 ticks:
@@ -13,6 +13,11 @@ ticks:
 dream:
   enabled: true
   interval_hours: 6
+
+api:
+  host: "127.0.0.1"
+  port: 8765
+  enabled: true
 
 ollama:
   strategy_model: "llama3.2"

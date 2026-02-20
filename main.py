@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 10: DreamMode added as background asyncio task.
+Stage 11: IntrospectionAPI added.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from core.dream_mode import DreamMode
 from core.event_bus import EventBus
 from core.file_monitor import FileMonitor
 from core.heavy_tick import HeavyTick
+from core.introspection_api import IntrospectionAPI
 from core.light_tick import LightTick
 from core.memory.episodic import EpisodicMemory
 from core.memory.vector_memory import VectorMemory
@@ -48,11 +49,11 @@ def load_yaml(path: Path) -> dict:
 
 
 def setup_logging(cfg: dict) -> logging.Logger:
-    log_dir = Path(cfg["logging"]["dir"])
+    log_dir   = Path(cfg["logging"]["dir"])
     log_dir.mkdir(parents=True, exist_ok=True)
     log_level = getattr(logging, cfg["logging"].get("level", "INFO").upper(), logging.INFO)
-    fmt     = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
-    datefmt = "%Y-%m-%d %H:%M:%S"
+    fmt       = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
+    datefmt   = "%Y-%m-%d %H:%M:%S"
     logging.basicConfig(
         level=log_level, format=fmt, datefmt=datefmt,
         handlers=[
@@ -221,10 +222,9 @@ async def _dream_loop(
     stop_event: asyncio.Event,
     logger: logging.Logger,
 ) -> None:
-    """Background task: checks every 5 minutes if Dream Mode should run."""
     logger.info("DreamMode loop started.")
     while not stop_event.is_set():
-        await asyncio.sleep(300)   # 5-minute poll interval
+        await asyncio.sleep(300)
         if stop_event.is_set():
             break
         if dream.should_run():
@@ -246,6 +246,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     loop       = asyncio.get_running_loop()
     state_path = Path(cfg["paths"]["state"])
     log_dir    = Path(cfg["logging"]["dir"])
+    start_time = time.time()
 
     # 1. EpisodicMemory
     mem = EpisodicMemory(Path(cfg["memory"]["episodic_db"]))
@@ -320,12 +321,10 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     # 11. StrategyEngine
     strategy = StrategyEngine(memory_dir=ROOT_DIR / "memory", event_bus=bus)
     strategy.load()
-
-    # Wire strategy events AFTER milestones are ready
     for event_name, handler in make_strategy_handlers(milestones, mem, logger).items():
         bus.subscribe(event_name, handler)
 
-    # 12. DreamMode (Stage 10)
+    # 12. DreamMode
     dream_cfg      = cfg.get("dream", {})
     dream_enabled  = dream_cfg.get("enabled", True)
     dream_interval = float(dream_cfg.get("interval_hours", 6))
@@ -359,14 +358,36 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     # 14. LightTick
     ticker = LightTick(cfg=cfg, bus=bus)
 
-    # 15. Initial world scan
+    # 15. IntrospectionAPI (Stage 11)
+    api_cfg     = cfg.get("api", {})
+    api_enabled = api_cfg.get("enabled", True)
+    api = IntrospectionAPI(
+        host=api_cfg.get("host", "127.0.0.1"),
+        port=int(api_cfg.get("port", 8765)),
+        components={
+            "episodic":        mem,
+            "vector_memory":   vector_mem,
+            "value_engine":    values,
+            "strategy_engine": strategy,
+            "self_model":      self_model,
+            "milestones":      milestones,
+            "dream_mode":      dream,
+            "ollama":          ollama,
+            "heavy_tick":      heavy,
+        },
+        start_time=start_time,
+    )
+    if api_enabled:
+        await api.start()
+
+    # 16. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode("world.scan",
                     f"Initial scan: {file_count} files",
                     outcome="success",
                     data={"file_count": file_count})
 
-    # 16. Startup banner
+    # 17. Startup banner
     logger.info("=" * 56)
     logger.info(f"  World        : {world.summary()}")
     logger.info(f"  Values       : {values.to_prompt_context()}")
@@ -376,11 +397,12 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  Strategy     : {strategy.to_prompt_context()!r:.120}")
     logger.info(f"  Vectors      : {vector_mem.count()} stored")
     logger.info(f"  DreamMode    : {'enabled' if dream_enabled else 'disabled'}, interval={dream_interval}h")
+    logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 17. Launch all tasks
+    # 18. Launch all tasks
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -403,15 +425,16 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     await stop_event.wait()
 
-    # 18. Graceful shutdown
+    # 19. Graceful shutdown
     ticker.stop()
     heavy.stop()
     monitor.stop()
+    if api_enabled:
+        await api.stop()
 
     tasks_to_cancel = [light_task, heavy_task]
     if dream_task is not None:
         tasks_to_cancel.append(dream_task)
-
     for task in tasks_to_cancel:
         task.cancel()
         try:

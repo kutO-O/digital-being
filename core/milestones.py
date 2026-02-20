@@ -1,16 +1,6 @@
 """
 Digital Being — Milestones
-Phase 6: Track important growth events.
-
-Stored in milestones/milestones.json.
-Once achieved, a milestone is never overwritten.
-
-Predefined milestones:
-  first_principle            — first self-formed principle
-  first_autonomous_action    — first action without user command
-  first_disagreement         — first disagreement with own previous decision
-  first_error_reflection     — first error corrected via reflection
-  first_vector_change        — first change of long-term direction
+Stage 11: Added get_achieved() and get_pending() for IntrospectionAPI.
 """
 
 from __future__ import annotations
@@ -36,14 +26,6 @@ _PREDEFINED: list[str] = [
 
 
 class Milestones:
-    """
-    Tracks and persists growth milestones.
-
-    Lifecycle:
-        ms = Milestones(bus)
-        ms.load(path)     # once at startup
-        ms.subscribe()    # wire EventBus
-    """
 
     def __init__(self, bus: "EventBus") -> None:
         self._bus  = bus
@@ -52,18 +34,14 @@ class Milestones:
             name: None for name in _PREDEFINED
         }
 
-    # ────────────────────────────────────────────────────────────
-    # Lifecycle
-    # ────────────────────────────────────────────────────────────
+    # ─ Lifecycle ──────────────────────────────────────────────────────────
     def load(self, path: Path) -> None:
         self._path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-
         if path.exists():
             try:
                 with path.open("r", encoding="utf-8") as f:
                     saved = json.load(f)
-                # Merge saved data; preserve predefined keys
                 for name in _PREDEFINED:
                     if name in saved:
                         self._data[name] = saved[name]
@@ -76,27 +54,17 @@ class Milestones:
             log.info("Milestones file created (all milestones pending).")
 
     def subscribe(self) -> None:
-        """Wire EventBus handlers."""
         self._bus.subscribe("self.principle_added", self._on_principle_added)
         log.debug("Milestones subscribed to self.principle_added.")
 
-    # ────────────────────────────────────────────────────────────
-    # Core API
-    # ────────────────────────────────────────────────────────────
+    # ─ Core API ────────────────────────────────────────────────────────
     def achieve(self, milestone_name: str, description: str) -> bool:
-        """
-        Mark a milestone as achieved.
-        Idempotent — silently ignores if already achieved.
-        Returns True if newly achieved, False if already done.
-        """
         if milestone_name not in self._data:
             log.debug(f"[achieve] Unknown milestone: '{milestone_name}'")
             return False
-
         if self._data[milestone_name] is not None:
             log.debug(f"[achieve] Already achieved: '{milestone_name}'")
             return False
-
         self._data[milestone_name] = {
             "achieved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "description": description,
@@ -109,33 +77,36 @@ class Milestones:
         return self._data.get(milestone_name) is not None
 
     def get_all(self) -> dict:
-        """Return all milestones with their status."""
         result = {}
         for name, record in self._data.items():
-            result[name] = {
-                "achieved": record is not None,
-                "detail":   record,
-            }
+            result[name] = {"achieved": record is not None, "detail": record}
         return result
+
+    def get_achieved(self) -> list[dict]:
+        """Return list of achieved milestones with detail. Stage 11."""
+        return [
+            {"name": name, **record}
+            for name, record in self._data.items()
+            if record is not None
+        ]
+
+    def get_pending(self) -> list[str]:
+        """Return list of milestone names not yet achieved. Stage 11."""
+        return [name for name, record in self._data.items() if record is None]
 
     def summary(self) -> str:
         achieved = sum(1 for v in self._data.values() if v is not None)
         return f"milestones={achieved}/{len(_PREDEFINED)}"
 
-    # ────────────────────────────────────────────────────────────
-    # EventBus handlers
-    # ────────────────────────────────────────────────────────────
+    # ─ EventBus ─────────────────────────────────────────────────────────
     async def _on_principle_added(self, data: dict) -> None:
-        """Trigger first_principle milestone when the first principle is formed."""
         text = data.get("text", "")
         self.achieve(
             "first_principle",
             f"Первый принцип сформирован: '{text[:80]}'",
         )
 
-    # ────────────────────────────────────────────────────────────
-    # Persistence
-    # ────────────────────────────────────────────────────────────
+    # ─ Persistence ──────────────────────────────────────────────────────
     def _save(self) -> None:
         if self._path is None:
             return

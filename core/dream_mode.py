@@ -1,16 +1,6 @@
 """
 Digital Being — DreamMode
-Stage 10: Periodic introspection cycle.
-
-Runs every `interval_hours` (default 6) when the system is not busy.
-Analyses recent episodes, finds patterns, updates the long-term vector
-and optionally adds a new principle.
-
-Design rules:
-  - run() is SYNCHRONOUS — called via run_in_executor from the async loop
-  - All errors are caught and logged; Dream Mode never crashes the system
-  - Skips silently if fewer than 5 episodes exist
-  - State persisted to memory/dream_state.json
+Stage 11: Added get_state() method for IntrospectionAPI.
 """
 
 from __future__ import annotations
@@ -34,25 +24,15 @@ if TYPE_CHECKING:
 log = logging.getLogger("digital_being.dream_mode")
 
 _DEFAULT_STATE: dict = {
-    "last_run":     "",
-    "run_count":    0,
+    "last_run":      "",
+    "run_count":     0,
     "last_insights": [],
 }
 
-_MIN_EPISODES = 5   # skip Dream if fewer episodes exist
+_MIN_EPISODES = 5
 
 
 class DreamMode:
-    """
-    Periodic introspection: analyse experience, update long-term vector.
-
-    Lifecycle:
-        dm = DreamMode(episodic, vector_memory, strategy, values, self_model,
-                       ollama, event_bus, memory_dir, interval_hours)
-        # In async loop:
-        if dm.should_run():
-            await loop.run_in_executor(None, dm.run)
-    """
 
     def __init__(
         self,
@@ -78,11 +58,8 @@ class DreamMode:
         self._state: dict   = {}
         self._load_state()
 
-    # ──────────────────────────────────────────────────────────────
-    # Public API
-    # ──────────────────────────────────────────────────────────────
+    # ─ Public API ────────────────────────────────────────────────────────
     def should_run(self) -> bool:
-        """True if interval_hours have passed since last run (or never ran)."""
         last = self._state.get("last_run", "")
         if not last:
             return True
@@ -92,11 +69,11 @@ class DreamMode:
         except (ValueError, OverflowError):
             return True
 
+    def get_state(self) -> dict:
+        """Return current dream state dict. Stage 11."""
+        return dict(self._state)
+
     def run(self) -> dict:
-        """
-        Full Dream cycle. SYNCHRONOUS — call via run_in_executor.
-        Returns result dict. Never raises.
-        """
         log.info("DreamMode: starting run.")
         try:
             return self._run_inner()
@@ -104,45 +81,40 @@ class DreamMode:
             log.error(f"DreamMode: unhandled error in run(): {e}", exc_info=True)
             return {"error": str(e)}
 
-    # ──────────────────────────────────────────────────────────────
-    # Internal cycle
-    # ──────────────────────────────────────────────────────────────
+    # ─ Internal cycle ─────────────────────────────────────────────────
     def _run_inner(self) -> dict:
-        # ─ Step 1: Collect material ─────────────────────────────
         episodes = self._episodic.get_recent_episodes(20)
-
         if len(episodes) < _MIN_EPISODES:
             log.info(
                 f"DreamMode: only {len(episodes)} episodes — "
                 f"minimum {_MIN_EPISODES} required. Skipping."
             )
-            self._touch_last_run()   # prevent immediate re-check
+            self._touch_last_run()
             return {"skipped": True, "reason": "not_enough_episodes"}
 
-        recent_vectors  = self._vector_mem.get_recent(10)
-        values_summary  = self._values.to_prompt_context()
-        current_vector  = self._strategy.get_longterm().get("vector", "")
-        principles      = self._self_model.get_principles()
+        recent_vectors = self._vector_mem.get_recent(10)
+        values_summary = self._values.to_prompt_context()
+        current_vector = self._strategy.get_longterm().get("vector", "")
+        principles     = self._self_model.get_principles()
 
-        # ─ Step 2: Build prompt ──────────────────────────────
         episodes_summary = "\n".join(
-            f"[{e.get('event_type','?')}] {e.get('description','')[:200]}"
+            f"[{e.get('event_type', '?')}] {e.get('description', '')[:200]}"
             for e in episodes
         )
-        principles_str = "\n".join(f"  • {p}" for p in principles) if principles else "  • нет"
+        principles_str = "\n".join(f"  \u2022 {p}" for p in principles) if principles else "  \u2022 \u043d\u0435\u0442"
 
         prompt = (
-            f"Ты — Digital Being, анализируешь свой опыт за последние часы.\n\n"
-            f"Недавние эпизоды (последние 20):\n{episodes_summary}\n\n"
-            f"Текущие ценности:\n{values_summary}\n\n"
-            f"Текущий вектор развития: {current_vector}\n\n"
-            f"Принципы:\n{principles_str}\n\n"
-            f"Задачи:\n"
-            f"1. Выдели 2-3 ключевых инсайта из опыта\n"
-            f"2. Найди повторяющиеся паттерны поведения\n"
-            f"3. Предложи обновлённый долгосрочный вектор (1 предложение)\n"
-            f"4. Если нужно — предложи новый принцип (1 предложение или null)\n\n"
-            f"Отвечай строго JSON без пояснений:\n"
+            f"\u0422\u044b \u2014 Digital Being, \u0430\u043d\u0430\u043b\u0438\u0437\u0438\u0440\u0443\u0435\u0448\u044c \u0441\u0432\u043e\u0439 \u043e\u043f\u044b\u0442 \u0437\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 \u0447\u0430\u0441\u044b.\n\n"
+            f"\u041d\u0435\u0434\u0430\u0432\u043d\u0438\u0435 \u044d\u043f\u0438\u0437\u043e\u0434\u044b (\u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 20):\n{episodes_summary}\n\n"
+            f"\u0422\u0435\u043a\u0443\u0449\u0438\u0435 \u0446\u0435\u043d\u043d\u043e\u0441\u0442\u0438:\n{values_summary}\n\n"
+            f"\u0422\u0435\u043a\u0443\u0449\u0438\u0439 \u0432\u0435\u043a\u0442\u043e\u0440 \u0440\u0430\u0437\u0432\u0438\u0442\u0438\u044f: {current_vector}\n\n"
+            f"\u041f\u0440\u0438\u043d\u0446\u0438\u043f\u044b:\n{principles_str}\n\n"
+            f"\u0417\u0430\u0434\u0430\u0447\u0438:\n"
+            f"1. \u0412\u044b\u0434\u0435\u043b\u0438 2-3 \u043a\u043b\u044e\u0447\u0435\u0432\u044b\u0445 \u0438\u043d\u0441\u0430\u0439\u0442\u0430 \u0438\u0437 \u043e\u043f\u044b\u0442\u0430\n"
+            f"2. \u041d\u0430\u0439\u0434\u0438 \u043f\u043e\u0432\u0442\u043e\u0440\u044f\u044e\u0449\u0438\u0435\u0441\u044f \u043f\u0430\u0442\u0442\u0435\u0440\u043d\u044b \u043f\u043e\u0432\u0435\u0434\u0435\u043d\u0438\u044f\n"
+            f"3. \u041f\u0440\u0435\u0434\u043b\u043e\u0436\u0438 \u043e\u0431\u043d\u043e\u0432\u043b\u0451\u043d\u043d\u044b\u0439 \u0434\u043e\u043b\u0433\u043e\u0441\u0440\u043e\u0447\u043d\u044b\u0439 \u0432\u0435\u043a\u0442\u043e\u0440 (1 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435)\n"
+            f"4. \u0415\u0441\u043b\u0438 \u043d\u0443\u0436\u043d\u043e \u2014 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0438 \u043d\u043e\u0432\u044b\u0439 \u043f\u0440\u0438\u043d\u0446\u0438\u043f (1 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0438\u043b\u0438 null)\n\n"
+            f"\u041e\u0442\u0432\u0435\u0447\u0430\u0439 \u0441\u0442\u0440\u043e\u0433\u043e JSON \u0431\u0435\u0437 \u043f\u043e\u044f\u0441\u043d\u0435\u043d\u0438\u0439:\n"
             f'{{\n'
             f'  "insights": ["...", "..."],\n'
             f'  "patterns": ["...", "..."],\n'
@@ -151,11 +123,11 @@ class DreamMode:
             f'}}'
         )
         system = (
-            "Ты — Digital Being. Анализируй честно и глубоко. "
-            "Отвечай ТОЛЬКО валидным JSON-объектом."
+            "\u0422\u044b \u2014 Digital Being. \u0410\u043d\u0430\u043b\u0438\u0437\u0438\u0440\u0443\u0439 \u0447\u0435\u0441\u0442\u043d\u043e \u0438 \u0433\u043b\u0443\u0431\u043e\u043a\u043e. "
+            "\u041e\u0442\u0432\u0435\u0447\u0430\u0439 \u0422\u041e\u041b\u042c\u041a\u041e \u0432\u0430\u043b\u0438\u0434\u043d\u044b\u043c JSON-\u043e\u0431\u044a\u0435\u043a\u0442\u043e\u043c."
         )
 
-        raw = self._ollama.chat(prompt, system)
+        raw      = self._ollama.chat(prompt, system)
         analysis = self._parse_json(raw)
 
         if not analysis:
@@ -167,7 +139,6 @@ class DreamMode:
         new_vector    = (analysis.get("new_vector") or "").strip()
         new_principle = (analysis.get("new_principle") or "").strip()
 
-        # ─ Step 3: Apply results ────────────────────────────
         vector_updated = False
         if new_vector and new_vector != current_vector:
             self._strategy.update_longterm(new_vector)
@@ -176,11 +147,9 @@ class DreamMode:
 
         principle_added = False
         if new_principle and new_principle.lower() not in ("null", "none", ""):
-            # add_principle is async — run via asyncio in sync context
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    # We're inside run_in_executor — schedule as future
                     future = asyncio.run_coroutine_threadsafe(
                         self._self_model.add_principle(new_principle[:500]),
                         loop,
@@ -193,26 +162,18 @@ class DreamMode:
             except Exception as e:
                 log.warning(f"DreamMode: add_principle failed: {e}")
 
-        # Save insights to EpisodicMemory
-        for insight in insights[:5]:   # cap at 5
+        for insight in insights[:5]:
             text = str(insight).strip()[:1000]
             if text:
-                self._episodic.add_episode(
-                    "dream_insight",
-                    text,
-                    outcome="success",
-                )
+                self._episodic.add_episode("dream_insight", text, outcome="success")
 
-        # Vector DB maintenance
         self._vector_mem.delete_old(days=30)
 
-        # ─ Step 4: Save state ──────────────────────────────
         self._state["last_run"]      = time.strftime("%Y-%m-%dT%H:%M:%S")
         self._state["run_count"]     = self._state.get("run_count", 0) + 1
         self._state["last_insights"] = [str(i)[:200] for i in insights[:5]]
         self._save_state()
 
-        # Publish event (fire-and-forget from sync context)
         self._publish_completed(
             insights_count=len(insights),
             vector_updated=vector_updated,
@@ -235,9 +196,7 @@ class DreamMode:
         )
         return result
 
-    # ──────────────────────────────────────────────────────────────
-    # State persistence
-    # ──────────────────────────────────────────────────────────────
+    # ─ State persistence ─────────────────────────────────────────────
     def _load_state(self) -> None:
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         if self._state_path.exists():
@@ -265,16 +224,12 @@ class DreamMode:
             log.error(f"DreamMode: failed to save state: {e}")
 
     def _touch_last_run(self) -> None:
-        """Update last_run without incrementing run_count (skipped run)."""
         self._state["last_run"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         self._save_state()
 
-    # ──────────────────────────────────────────────────────────────
-    # Helpers
-    # ──────────────────────────────────────────────────────────────
+    # ─ Helpers ───────────────────────────────────────────────────────────
     @staticmethod
     def _parse_json(raw: str) -> dict | None:
-        """Tolerant JSON parser. Returns None on failure."""
         if not raw:
             return None
         try:
@@ -291,7 +246,6 @@ class DreamMode:
         return None
 
     def _publish_completed(self, insights_count: int, vector_updated: bool, principle_added: bool) -> None:
-        """Fire-and-forget event publish from sync context."""
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
