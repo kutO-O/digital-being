@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 17: CuriosityEngine added.
+Stage 18: SelfModificationEngine added.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from core.narrative_engine import NarrativeEngine
 from core.ollama_client import OllamaClient
 from core.reflection_engine import ReflectionEngine
 from core.self_model import SelfModel
+from core.self_modification import SelfModificationEngine  # Stage 18
 from core.strategy_engine import StrategyEngine
 from core.value_engine import ValueEngine
 from core.world_model import WorldModel
@@ -238,6 +239,21 @@ def make_narrative_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict
         tick = data.get("tick", "?")
         logger.info(f"[NarrativeEngine] Diary entry written at tick #{tick}.")
     return {"narrative.entry_written": on_narrative_entry_written}
+
+
+def make_self_modification_handlers(
+    mem: EpisodicMemory,
+    logger: logging.Logger,
+) -> dict:
+    """EventBus handlers for self-modification events. Stage 18."""
+    async def on_config_modified(data: dict) -> None:
+        key = data.get("key", "?")
+        new_value = data.get("new_value", "?")
+        old_value = data.get("old_value", "?")
+        logger.info(
+            f"[SelfModification] Config changed: {key} = {new_value} (was {old_value})"
+        )
+    return {"config.modified": on_config_modified}
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -453,7 +469,24 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         f"total_asked={cur_stats['total_asked']}"
     )
 
-    # 19. HeavyTick
+    # 19. SelfModificationEngine  ← Stage 18
+    self_modification = SelfModificationEngine(
+        config_path=CONFIG_PATH,
+        memory_dir=ROOT_DIR / "memory",
+        ollama=ollama,
+        event_bus=bus,
+    )
+    for event_name, handler in make_self_modification_handlers(mem, logger).items():
+        bus.subscribe(event_name, handler)
+    mod_stats = self_modification.get_stats()
+    logger.info(
+        f"SelfModificationEngine ready. "
+        f"applied={mod_stats['total_applied']} "
+        f"approved={mod_stats['approved']} "
+        f"rejected={mod_stats['rejected']}"
+    )
+
+    # 20. HeavyTick
     heavy = HeavyTick(
         cfg=cfg,
         ollama=ollama,
@@ -473,12 +506,13 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         attention_system=attention_system,    # Stage 16
         curiosity_engine=curiosity_engine     # Stage 17
         if curiosity_enabled else None,
+        self_modification=self_modification,  # Stage 18
     )
 
-    # 20. LightTick
+    # 21. LightTick
     ticker = LightTick(cfg=cfg, bus=bus)
 
-    # 21. IntrospectionAPI (Stage 11-17)
+    # 22. IntrospectionAPI (Stage 11-18)
     api_cfg     = cfg.get("api", {})
     api_enabled = api_cfg.get("enabled", True)
     api = IntrospectionAPI(
@@ -500,20 +534,21 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "goal_persistence":   goal_persistence,    # Stage 15
             "attention_system":   attention_system,    # Stage 16
             "curiosity_engine":   curiosity_engine,    # Stage 17
+            "self_modification":  self_modification,   # Stage 18
         },
         start_time=start_time,
     )
     if api_enabled:
         await api.start()
 
-    # 22. Initial world scan
+    # 23. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode("world.scan",
                     f"Initial scan: {file_count} files",
                     outcome="success",
                     data={"file_count": file_count})
 
-    # 23. Startup banner
+    # 24. Startup banner
     gp_stats = goal_persistence.get_stats()
     logger.info("=" * 56)
     logger.info(f"  World        : {world.summary()}")
@@ -537,12 +572,16 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         f"  Curiosity    : {'enabled' if curiosity_enabled else 'disabled'} "
         f"open={cur_stats['open']} total_asked={cur_stats['total_asked']}"
     )
+    logger.info(
+        f"  SelfMod      : applied={mod_stats['total_applied']} "
+        f"approved={mod_stats['approved']} rejected={mod_stats['rejected']}"
+    )
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 24. Launch all tasks
+    # 25. Launch all tasks
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -565,7 +604,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     await stop_event.wait()
 
-    # 25. Graceful shutdown — mark interrupted BEFORE cancelling tasks
+    # 26. Graceful shutdown — mark interrupted BEFORE cancelling tasks
     goal_persistence.mark_interrupted()   # Stage 15: always called first
 
     ticker.stop()
