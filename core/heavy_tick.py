@@ -1,6 +1,6 @@
 """
 Digital Being — HeavyTick
-Stage 16: AttentionSystem integration.
+Stage 17: CuriosityEngine integration.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always) + embed → VectorMemory
@@ -9,18 +9,21 @@ Each tick executes in strict order (with per-tick timeout):
   Step 3 — Action
   Step 4 — After-action (includes emotion update + reflection trigger
             + narrative trigger + GoalPersistence mark_completed on success)
+  Step 5 — Curiosity: generate questions / seek answers (Stage 17)
 
-New in Stage 16:
-  - attention_system injected (optional, gracefully skipped if None)
-  - _step_monologue():     episodes passed through attention_system.filter_episodes()
-                           before being formatted; attention focus added to system prompt.
-  - _step_goal_selection(): same attention-filtered context injected into prompt.
+New in Stage 17:
+  - curiosity_engine injected (optional, gracefully skipped if None)
+  - After _step_after_action():
+      • should_ask()  → generate_questions() → add_question()
+      • should_answer() → get_next_question() → seek_answer() → answer_question()
+  - _step_monologue(): open questions appended to prompt.
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
   - embed() does NOT count against budget
   - Reflection adds 1 extra LLM call on reflection ticks (outside normal budget)
   - Narrative adds 1 extra LLM call on narrative ticks (outside normal budget)
+  - Curiosity adds up to 2 extra LLM calls (generate + seek) on curiosity ticks
   - Max 30 s per tick (asyncio.wait_for)
 """
 
@@ -35,6 +38,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.attention_system import AttentionSystem
+    from core.curiosity_engine import CuriosityEngine
     from core.emotion_engine import EmotionEngine
     from core.goal_persistence import GoalPersistence
     from core.memory.episodic import EpisodicMemory
@@ -90,6 +94,7 @@ class HeavyTick:
         narrative_engine:  "NarrativeEngine | None"  = None,  # Stage 14
         goal_persistence:  "GoalPersistence | None"  = None,  # Stage 15
         attention_system:  "AttentionSystem | None"  = None,  # Stage 16
+        curiosity_engine:  "CuriosityEngine | None"  = None,  # Stage 17
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -107,6 +112,7 @@ class HeavyTick:
         self._narrative    = narrative_engine   # Stage 14
         self._goal_pers    = goal_persistence   # Stage 15
         self._attention    = attention_system   # Stage 16
+        self._curiosity    = curiosity_engine   # Stage 17
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(
@@ -123,6 +129,10 @@ class HeavyTick:
         self._attn_top_k      = int(_attn_cfg.get("top_k", 5))
         self._attn_min_score  = float(_attn_cfg.get("min_score", 0.4))
         self._attn_max_chars  = int(_attn_cfg.get("max_context_chars", 1500))
+
+        # Curiosity config (Stage 17)
+        _cur_cfg              = cfg.get("curiosity", {})
+        self._curiosity_enabled = bool(_cur_cfg.get("enabled", True))
 
         self._monologue_log = self._make_file_logger(
             "digital_being.monologue",
@@ -244,6 +254,60 @@ class HeavyTick:
             success=success,
             outcome=outcome,
         )
+
+        # Step 5: Curiosity Engine (Stage 17)
+        await self._step_curiosity(n)
+
+    # ────────────────────────────────────────────────────────────
+    # Stage 17: Curiosity step
+    # ────────────────────────────────────────────────────────────
+    async def _step_curiosity(self, n: int) -> None:
+        """Генерация вопросов и поиск ответов через CuriosityEngine."""
+        if self._curiosity is None or not self._curiosity_enabled:
+            return
+
+        loop = asyncio.get_event_loop()
+
+        # Генерация вопросов
+        if self._curiosity.should_ask(n):
+            log.info(f"[HeavyTick #{n}] CuriosityEngine: generating questions.")
+            try:
+                recent_eps = self._mem.get_recent_episodes(10)
+                new_questions = await loop.run_in_executor(
+                    None,
+                    lambda: self._curiosity.generate_questions(
+                        recent_eps, self._world, self._ollama
+                    ),
+                )
+                for q in new_questions:
+                    self._curiosity.add_question(q, context="auto", priority=0.6)
+                if new_questions:
+                    log.info(
+                        f"[HeavyTick #{n}] CuriosityEngine: "
+                        f"{len(new_questions)} question(s) generated."
+                    )
+            except Exception as e:
+                log.error(f"[HeavyTick #{n}] CuriosityEngine generate error: {e}")
+
+        # Поиск ответов
+        if self._curiosity.should_answer(n):
+            q = self._curiosity.get_next_question()
+            if q:
+                log.info(
+                    f"[HeavyTick #{n}] CuriosityEngine: seeking answer for "
+                    f"'{q['question'][:60]}'"
+                )
+                try:
+                    answer = await loop.run_in_executor(
+                        None,
+                        lambda: self._curiosity.seek_answer(
+                            q, self._mem, self._vector_mem, self._ollama
+                        ),
+                    )
+                    self._curiosity.answer_question(q["id"], answer)
+                except Exception as e:
+                    log.error(f"[HeavyTick #{n}] CuriosityEngine seek_answer error: {e}")
+                    self._curiosity.answer_question(q["id"], "Ответ не найден")
 
     # ────────────────────────────────────────────────────────────
     # Stage 16: attention helpers
@@ -480,6 +544,7 @@ class HeavyTick:
         Step 1: Generate monologue.
         Stage 16: recent episodes passed through AttentionSystem before
                   being formatted; attention focus injected into system prompt.
+        Stage 17: open curiosity questions appended to prompt.
         Returns (text, episode_id).
         """
         recent_changes = self._world.get_recent_changes(3)
@@ -512,6 +577,13 @@ class HeavyTick:
             f"Напиши короткий внутренний монолог (3-5 предложений):\n"
             f"Что ты сейчас замечаешь? Что тебя беспокоит или интересует? О чём ты думаешь?"
         )
+
+        # Stage 17: append open curiosity questions to prompt
+        if self._curiosity is not None and self._curiosity_enabled:
+            open_q = self._curiosity.get_open_questions(3)
+            if open_q:
+                questions_str = "; ".join(q["question"] for q in open_q)
+                prompt += f"\nОткрытые вопросы: {questions_str}"
 
         # Stage 16: attention focus appended to system prompt
         focus_summary = self._attention_focus_summary()

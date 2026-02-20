@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 16: AttentionSystem added.
+Stage 17: CuriosityEngine added.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 
 from core.attention_system import AttentionSystem  # Stage 16
+from core.curiosity_engine import CuriosityEngine  # Stage 17
 from core.dream_mode import DreamMode
 from core.emotion_engine import EmotionEngine
 from core.event_bus import EventBus
@@ -440,7 +441,19 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         f"Focus: {attention_system.get_focus_summary()}"
     )
 
-    # 18. HeavyTick
+    # 18. CuriosityEngine  ← Stage 17
+    curiosity_cfg     = cfg.get("curiosity", {})
+    curiosity_enabled = bool(curiosity_cfg.get("enabled", True))
+    curiosity_engine  = CuriosityEngine(memory_dir=ROOT_DIR / "memory")
+    curiosity_engine.load()
+    cur_stats = curiosity_engine.get_stats()
+    logger.info(
+        f"CuriosityEngine ready. "
+        f"open={cur_stats['open']} answered={cur_stats['answered']} "
+        f"total_asked={cur_stats['total_asked']}"
+    )
+
+    # 19. HeavyTick
     heavy = HeavyTick(
         cfg=cfg,
         ollama=ollama,
@@ -458,12 +471,14 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         narrative_engine=narrative_engine,    # Stage 14
         goal_persistence=goal_persistence,    # Stage 15
         attention_system=attention_system,    # Stage 16
+        curiosity_engine=curiosity_engine     # Stage 17
+        if curiosity_enabled else None,
     )
 
-    # 19. LightTick
+    # 20. LightTick
     ticker = LightTick(cfg=cfg, bus=bus)
 
-    # 20. IntrospectionAPI (Stage 11-16)
+    # 21. IntrospectionAPI (Stage 11-17)
     api_cfg     = cfg.get("api", {})
     api_enabled = api_cfg.get("enabled", True)
     api = IntrospectionAPI(
@@ -484,20 +499,21 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "narrative_engine":   narrative_engine,    # Stage 14
             "goal_persistence":   goal_persistence,    # Stage 15
             "attention_system":   attention_system,    # Stage 16
+            "curiosity_engine":   curiosity_engine,    # Stage 17
         },
         start_time=start_time,
     )
     if api_enabled:
         await api.start()
 
-    # 21. Initial world scan
+    # 22. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode("world.scan",
                     f"Initial scan: {file_count} files",
                     outcome="success",
                     data={"file_count": file_count})
 
-    # 22. Startup banner
+    # 23. Startup banner
     gp_stats = goal_persistence.get_stats()
     logger.info("=" * 56)
     logger.info(f"  World        : {world.summary()}")
@@ -517,12 +533,16 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         f"interrupted={gp_stats['interrupted']}"
     )
     logger.info(f"  Attention    : {attention_system.get_focus_summary()}")
+    logger.info(
+        f"  Curiosity    : {'enabled' if curiosity_enabled else 'disabled'} "
+        f"open={cur_stats['open']} total_asked={cur_stats['total_asked']}"
+    )
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 23. Launch all tasks
+    # 24. Launch all tasks
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -545,7 +565,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     await stop_event.wait()
 
-    # 24. Graceful shutdown — mark interrupted BEFORE cancelling tasks
+    # 25. Graceful shutdown — mark interrupted BEFORE cancelling tasks
     goal_persistence.mark_interrupted()   # Stage 15: always called first
 
     ticker.stop()

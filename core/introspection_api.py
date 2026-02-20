@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 16: /status now includes attention_focus; attention_system added to components.
+Stage 17: /curiosity endpoint added; curiosity_engine added to components.
 
 Endpoints (all GET, all return JSON unless noted):
   /status      — uptime, tick_count, mode, current goal, goal_stats, attention_focus [Stage 16]
@@ -15,6 +15,7 @@ Endpoints (all GET, all return JSON unless noted):
   /reflection  — last 5 reflections + total count [Stage 13]
   /diary       — last N diary entries from narrative_log.json [Stage 14]
   /diary/raw   — full diary.md as text/plain [Stage 14]
+  /curiosity   — open questions + stats [Stage 17]
 
 Design rules:
   - Pure read — no mutations
@@ -37,6 +38,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from core.attention_system import AttentionSystem
+    from core.curiosity_engine import CuriosityEngine
     from core.dream_mode import DreamMode
     from core.emotion_engine import EmotionEngine
     from core.goal_persistence import GoalPersistence
@@ -111,6 +113,7 @@ class IntrospectionAPI:
         app.router.add_get("/reflection", self._handle_reflection) # Stage 13
         app.router.add_get("/diary",      self._handle_diary)      # Stage 14
         app.router.add_get("/diary/raw",  self._handle_diary_raw)  # Stage 14
+        app.router.add_get("/curiosity",  self._handle_curiosity)  # Stage 17
 
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -388,6 +391,26 @@ class IntrospectionAPI:
                 charset="utf-8",
                 headers=_CORS_HEADERS,
             )
+        except Exception as e:
+            return self._error(e)
+
+    async def _handle_curiosity(self, request: web.Request) -> web.Response:
+        """GET /curiosity — Stage 17: open questions and curiosity stats."""
+        try:
+            ce = self._c.get("curiosity_engine")
+            if ce is None:
+                return self._json({
+                    "open_questions": [],
+                    "stats": {"open": 0, "answered": 0, "total_asked": 0},
+                    "note": "CuriosityEngine not available",
+                })
+            limit = min(int(request.rel_url.query.get("limit", 10)), 50)
+            open_questions = ce.get_open_questions(limit)
+            payload = {
+                "open_questions": open_questions,
+                "stats":          ce.get_stats(),
+            }
+            return self._json(payload)
         except Exception as e:
             return self._error(e)
 
