@@ -1,9 +1,9 @@
 """
 Digital Being — IntrospectionAPI
-Stage 14: /diary and /diary/raw endpoints added.
+Stage 15: /status now includes goal_stats; goal_persistence added to components.
 
 Endpoints (all GET, all return JSON unless noted):
-  /status      — uptime, tick_count, mode, current goal
+  /status      — uptime, tick_count, mode, current goal, goal_stats [Stage 15]
   /memory      — episode count, vector count, recent episodes
   /values      — scores, mode, conflicts
   /strategy    — three planning horizons
@@ -38,6 +38,7 @@ except ImportError:
 if TYPE_CHECKING:
     from core.dream_mode import DreamMode
     from core.emotion_engine import EmotionEngine
+    from core.goal_persistence import GoalPersistence
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
@@ -145,10 +146,18 @@ class IntrospectionAPI:
     # ──────────────────────────────────────────────────────────────
     async def _handle_status(self, request: web.Request) -> web.Response:
         try:
-            heavy   = self._c.get("heavy_tick")
-            values  = self._c["value_engine"]
+            heavy    = self._c.get("heavy_tick")
+            values   = self._c["value_engine"]
             strategy = self._c["strategy_engine"]
             now_goal = strategy.get_now()
+
+            # Stage 15: goal persistence stats
+            gp = self._c.get("goal_persistence")
+            goal_stats = gp.get_stats() if gp is not None else {
+                "total_completed": 0,
+                "resume_count":    0,
+                "interrupted":     False,
+            }
 
             payload = {
                 "uptime_seconds": int(time.time() - self._start_time),
@@ -157,6 +166,7 @@ class IntrospectionAPI:
                 "current_goal":   now_goal.get("goal", ""),
                 "action_type":    now_goal.get("action_type", ""),
                 "last_tick_at":   now_goal.get("created_at", ""),
+                "goal_stats":     goal_stats,   # Stage 15
             }
             return self._json(payload)
         except Exception as e:

@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 14: NarrativeEngine added.
+Stage 15: GoalPersistence added.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from core.dream_mode import DreamMode
 from core.emotion_engine import EmotionEngine
 from core.event_bus import EventBus
 from core.file_monitor import FileMonitor
+from core.goal_persistence import GoalPersistence  # Stage 15
 from core.heavy_tick import HeavyTick
 from core.introspection_api import IntrospectionAPI
 from core.light_tick import LightTick
@@ -414,7 +415,20 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         f"Writes diary every {narrative_every} ticks."
     )
 
-    # 16. HeavyTick
+    # 16. GoalPersistence  ← Stage 15
+    goal_persistence = GoalPersistence(memory_dir=ROOT_DIR / "memory")
+    goal_persistence.load()
+    if goal_persistence.was_interrupted():
+        ag = goal_persistence.get_active()
+        last_goal = ag.get("goal", "?") if ag else "?"
+        logger.warning(
+            f"[GoalPersistence] System recovering from interruption. "
+            f"Last goal: '{last_goal[:120]}'"
+        )
+    else:
+        logger.info("[GoalPersistence] Clean start — no interrupted goal.")
+
+    # 17. HeavyTick
     heavy = HeavyTick(
         cfg=cfg,
         ollama=ollama,
@@ -427,15 +441,16 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         sandbox_dir=ROOT_DIR / "sandbox",
         strategy=strategy,
         vector_memory=vector_mem,
-        emotion_engine=emotion_engine,       # Stage 12
-        reflection_engine=reflection_engine, # Stage 13
-        narrative_engine=narrative_engine,   # Stage 14
+        emotion_engine=emotion_engine,        # Stage 12
+        reflection_engine=reflection_engine,  # Stage 13
+        narrative_engine=narrative_engine,    # Stage 14
+        goal_persistence=goal_persistence,    # Stage 15
     )
 
-    # 17. LightTick
+    # 18. LightTick
     ticker = LightTick(cfg=cfg, bus=bus)
 
-    # 18. IntrospectionAPI (Stage 11-14)
+    # 19. IntrospectionAPI (Stage 11-15)
     api_cfg     = cfg.get("api", {})
     api_enabled = api_cfg.get("enabled", True)
     api = IntrospectionAPI(
@@ -451,23 +466,25 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "dream_mode":         dream,
             "ollama":             ollama,
             "heavy_tick":         heavy,
-            "emotion_engine":     emotion_engine,     # Stage 12
-            "reflection_engine":  reflection_engine,  # Stage 13
-            "narrative_engine":   narrative_engine,   # Stage 14
+            "emotion_engine":     emotion_engine,      # Stage 12
+            "reflection_engine":  reflection_engine,   # Stage 13
+            "narrative_engine":   narrative_engine,    # Stage 14
+            "goal_persistence":   goal_persistence,    # Stage 15
         },
         start_time=start_time,
     )
     if api_enabled:
         await api.start()
 
-    # 19. Initial world scan
+    # 20. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode("world.scan",
                     f"Initial scan: {file_count} files",
                     outcome="success",
                     data={"file_count": file_count})
 
-    # 20. Startup banner
+    # 21. Startup banner
+    gp_stats = goal_persistence.get_stats()
     logger.info("=" * 56)
     logger.info(f"  World        : {world.summary()}")
     logger.info(f"  Values       : {values.to_prompt_context()}")
@@ -480,12 +497,17 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  EmotionEngine: dominant={dominant_name}({dominant_val:.2f})")
     logger.info(f"  Reflection   : every {reflection_every} ticks")
     logger.info(f"  Narrative    : every {narrative_every} ticks")
+    logger.info(
+        f"  GoalPersist  : completed={gp_stats['total_completed']} "
+        f"resumes={gp_stats['resume_count']} "
+        f"interrupted={gp_stats['interrupted']}"
+    )
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 21. Launch all tasks
+    # 22. Launch all tasks
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -508,7 +530,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     await stop_event.wait()
 
-    # 22. Graceful shutdown
+    # 23. Graceful shutdown — mark interrupted BEFORE cancelling tasks
+    goal_persistence.mark_interrupted()   # Stage 15: always called first
+
     ticker.stop()
     heavy.stop()
     monitor.stop()

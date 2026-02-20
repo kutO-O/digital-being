@@ -1,18 +1,21 @@
 """
 Digital Being — HeavyTick
-Stage 14: NarrativeEngine integration.
+Stage 15: GoalPersistence integration.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always) + embed → VectorMemory
   Step 2 — Goal Selection      via StrategyEngine + semantic context
+                                + GoalPersistence resume context if interrupted
   Step 3 — Action
   Step 4 — After-action (includes emotion update + reflection trigger
-            + narrative trigger)
+            + narrative trigger + GoalPersistence mark_completed on success)
 
-New in Stage 14:
-  - narrative_engine injected (optional, gracefully skipped if None)
-  - _step_after_action(): calls narrative_engine.run() via run_in_executor
-    when should_run(tick_count) is True (after reflection check)
+New in Stage 15:
+  - goal_persistence injected (optional, gracefully skipped if None)
+  - _step_goal_selection(): injects get_resume_context() into prompt when
+    was_interrupted() is True; calls increment_resume() on first recovery tick.
+  - After _step_goal_selection(): calls goal_persistence.set_active(goal, tick)
+  - _step_after_action(): calls goal_persistence.mark_completed(tick) on success
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
@@ -33,6 +36,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.emotion_engine import EmotionEngine
+    from core.goal_persistence import GoalPersistence
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
     from core.milestones import Milestones
@@ -84,6 +88,7 @@ class HeavyTick:
         emotion_engine: "EmotionEngine | None" = None,
         reflection_engine: "ReflectionEngine | None" = None,  # Stage 13
         narrative_engine:  "NarrativeEngine | None"  = None,  # Stage 14
+        goal_persistence:  "GoalPersistence | None"  = None,  # Stage 15
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -99,6 +104,7 @@ class HeavyTick:
         self._emotions     = emotion_engine
         self._reflection   = reflection_engine  # Stage 13
         self._narrative    = narrative_engine   # Stage 14
+        self._goal_pers    = goal_persistence   # Stage 15
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(
@@ -106,6 +112,9 @@ class HeavyTick:
         )
         self._tick_count  = 0
         self._running     = False
+
+        # Stage 15: flag to know whether the first recovery tick has been processed
+        self._resume_incremented = False
 
         self._monologue_log = self._make_file_logger(
             "digital_being.monologue",
@@ -192,6 +201,10 @@ class HeavyTick:
         # Step 2: Goal Selection
         goal_data = await self._step_goal_selection(n, monologue, semantic_ctx)
 
+        # Stage 15: persist active goal immediately after selection
+        if self._goal_pers is not None:
+            self._goal_pers.set_active(goal_data, tick=n)
+
         action_type = goal_data.get("action_type", "observe")
         risk_level  = goal_data.get("risk_level",  "low")
         goal_text   = goal_data.get("goal",         _DEFAULT_GOAL["goal"])
@@ -249,6 +262,10 @@ class HeavyTick:
             event_type=f"heavy_tick.{action_type}",
             outcome=emotion_outcome,
         )
+
+        # Stage 15: mark goal completed on success
+        if self._goal_pers is not None and success:
+            self._goal_pers.mark_completed(tick=n)
 
         self._mem.add_episode(
             f"heavy_tick.{action_type}",
@@ -478,9 +495,21 @@ class HeavyTick:
         Step 2: Select goal.
         Stage 9:  semantic_ctx injected into prompt.
         Stage 12: emotion context injected into StrategyEngine prompt.
+        Stage 15: resume context injected when system was interrupted;
+                  increment_resume() called once on first recovery tick.
         """
         # Stage 12: emotion context for goal selection
         emotion_ctx = self._emotions.to_prompt_context() if self._emotions else ""
+
+        # Stage 15: build resume context block
+        resume_ctx = ""
+        if self._goal_pers is not None and self._goal_pers.was_interrupted():
+            resume_ctx = self._goal_pers.get_resume_context()
+            log.info(f"[HeavyTick #{n}] Recovery tick. Resume context injected.")
+            # Increment resume_count once — on the very first tick after restart
+            if not self._resume_incremented:
+                self._goal_pers.increment_resume()
+                self._resume_incremented = True
 
         # ── Stage 8/9 path: StrategyEngine ─────────────────────
         if self._strategy is not None:
@@ -491,6 +520,7 @@ class HeavyTick:
                 ollama=self._ollama,
                 semantic_ctx=semantic_ctx,
                 emotion_ctx=emotion_ctx,   # Stage 12 addition
+                resume_ctx=resume_ctx,     # Stage 15 addition
             )
             log.info(
                 f"[HeavyTick #{n}] Goal (StrategyEngine): "
@@ -506,10 +536,11 @@ class HeavyTick:
             "action_vs_caution",
             risk_score=0.25 if mode in ("curious", "normal") else 0.5,
         )
-        sem_block = f"\n{semantic_ctx}\n" if semantic_ctx else ""
-        em_block  = f"\n{emotion_ctx}\n"  if emotion_ctx  else ""
+        sem_block    = f"\n{semantic_ctx}\n" if semantic_ctx else ""
+        em_block     = f"\n{emotion_ctx}\n"  if emotion_ctx  else ""
+        resume_block = f"\n{resume_ctx}\n"   if resume_ctx   else ""
         prompt = (
-            f"{monologue}\n{sem_block}{em_block}\n"
+            f"{monologue}\n{sem_block}{em_block}{resume_block}\n"
             f"Текущий режим: {mode}\n"
             f"Конфликты: exploration_vs_stability={c_expl}, action_vs_caution={c_act}\n\n"
             f"Выбери ONE цель. JSON:\n"
