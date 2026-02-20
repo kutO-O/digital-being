@@ -1,9 +1,9 @@
 # Digital Being — System Configuration
-# Phase 5: Version bump to 0.5.0, drift detection added
+# Phase 6: Version bump to 0.6.0
 
 system:
   name: "digital_being"
-  version: "0.5.0"
+  version: "0.6.0"
   debug: false
 
 ticks:

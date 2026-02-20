@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Phase 5: ValueEngine integrated. Scores loaded from state.json.
+Phase 6: SelfModel + Milestones integrated.
 """
 
 from __future__ import annotations
@@ -19,8 +19,10 @@ from core.event_bus import EventBus
 from core.file_monitor import FileMonitor
 from core.light_tick import LightTick
 from core.memory.episodic import EpisodicMemory
-from core.world_model import WorldModel
+from core.milestones import Milestones
+from core.self_model import SelfModel
 from core.value_engine import ValueEngine
+from core.world_model import WorldModel
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -67,6 +69,8 @@ def ensure_directories(cfg: dict) -> None:
         Path(cfg["paths"]["state"]).parent,
         Path(cfg["paths"]["snapshots"]),
         Path(cfg["scores"]["drift"]["snapshot_dir"]),
+        ROOT_DIR / "memory" / "self_snapshots",
+        ROOT_DIR / "milestones",
     ]:
         p.mkdir(parents=True, exist_ok=True)
     for key in ("inbox", "outbox"):
@@ -104,7 +108,7 @@ def bootstrap_from_seed(seed: dict, cfg: dict, logger: logging.Logger) -> None:
 
 
 # ────────────────────────────────────────────────────────────────────
-# EventBus handlers
+# EventBus handler factories
 # ────────────────────────────────────────────────────────────────────
 def make_memory_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
     async def on_user_message(data: dict) -> None:
@@ -116,7 +120,7 @@ def make_memory_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
     async def on_user_urgent(data: dict) -> None:
         text = data.get("text", "")
         logger.warning(f"[EVENT] user.urgent ⚡ → '{text[:120]}'")
-        # TODO Phase 6: interrupt heavy tick immediately on !URGENT
+        # TODO Phase 7: interrupt heavy tick immediately on !URGENT
         mem.add_episode("urgent", text[:_MAX_DESC_LEN] or "(empty)",
                         data={"tick": data.get("tick")})
 
@@ -151,10 +155,7 @@ def make_world_handlers(logger: logging.Logger) -> dict:
     async def on_world_updated(data: dict) -> None:
         logger.debug(f"[WorldModel] Updated: {data.get('summary', '')}")
 
-    return {
-        "world.ready":   on_world_ready,
-        "world.updated": on_world_updated,
-    }
+    return {"world.ready": on_world_ready, "world.updated": on_world_updated}
 
 
 def make_value_handlers(values: ValueEngine, mem: EpisodicMemory,
@@ -162,19 +163,31 @@ def make_value_handlers(values: ValueEngine, mem: EpisodicMemory,
     async def on_value_changed(data: dict) -> None:
         ctx = data.get("context", "")
         logger.info(f"[ValueEngine] {ctx}")
-        # Drift warnings — check on every score change, log to episodic
         warnings = values.check_drift()
         for w in warnings:
-            mem.add_episode("value.drift_warning", w[:_MAX_DESC_LEN], outcome="unknown")
+            mem.add_episode("value.drift_warning", w[:_MAX_DESC_LEN])
 
     return {"value.changed": on_value_changed}
+
+
+def make_self_handlers(self_model: SelfModel, mem: EpisodicMemory,
+                       logger: logging.Logger) -> dict:
+    async def on_self_drift_detected(data: dict) -> None:
+        msg = (
+            f"Self drift detected: version {data.get('past_version')} → "
+            f"{data.get('current_version')} (Δ{data.get('delta')})"
+        )
+        logger.warning(f"[SelfModel] {msg}")
+        mem.add_episode("self.drift_detected", msg[:_MAX_DESC_LEN])
+
+    return {"self.drift_detected": on_self_drift_detected}
 
 
 # ────────────────────────────────────────────────────────────────────
 # Async main
 # ────────────────────────────────────────────────────────────────────
 async def async_main(cfg: dict, logger: logging.Logger) -> None:
-    loop = asyncio.get_running_loop()
+    loop       = asyncio.get_running_loop()
     state_path = Path(cfg["paths"]["state"])
 
     # 1. EpisodicMemory
@@ -197,20 +210,32 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     # 3. ValueEngine
     values = ValueEngine(cfg=cfg, bus=bus)
     values.load(state_path=state_path, seed_path=SEED_PATH)
-    values.subscribe()   # hooks world.updated
-    # Save initial weekly snapshot (first run of the day)
+    values.subscribe()
     values.save_weekly_snapshot()
 
-    # 4. Memory handlers
+    # 4. SelfModel
+    self_model = SelfModel(bus=bus)
+    self_model.load(
+        self_model_path=ROOT_DIR / "self_model.json",
+        seed_path=SEED_PATH,
+        snapshots_dir=ROOT_DIR / "memory" / "self_snapshots",
+    )
+    self_model.subscribe()
+    self_model.save_weekly_snapshot()
+
+    # 5. Milestones
+    milestones = Milestones(bus=bus)
+    milestones.load(ROOT_DIR / "milestones" / "milestones.json")
+    milestones.subscribe()
+
+    # 6. Wire all EventBus handlers
     for event_name, handler in make_memory_handlers(mem, logger).items():
         bus.subscribe(event_name, handler)
-
-    # 5. World handlers
     for event_name, handler in make_world_handlers(logger).items():
         bus.subscribe(event_name, handler)
-
-    # 6. Value.changed handler
     for event_name, handler in make_value_handlers(values, mem, logger).items():
+        bus.subscribe(event_name, handler)
+    for event_name, handler in make_self_handlers(self_model, mem, logger).items():
         bus.subscribe(event_name, handler)
 
     # 7. WorldModel
@@ -225,7 +250,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     ticker    = LightTick(cfg=cfg, bus=bus)
     tick_task = asyncio.create_task(ticker.start(), name="light_tick")
 
-    # 10. Initial scan
+    # 10. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode(
         "world.scan",
@@ -234,14 +259,17 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         data={"file_count": file_count},
     )
 
+    # 11. Startup banner
     logger.info("=" * 50)
-    logger.info(f"  World  : {world.summary()}")
-    logger.info(f"  Values : {values.to_prompt_context()}")
-    logger.info(f"  Mode   : {values.get_mode()}")
+    logger.info(f"  World      : {world.summary()}")
+    logger.info(f"  Values     : {values.to_prompt_context()}")
+    logger.info(f"  Self v{self_model.get_version():<3}  : {self_model.get_identity()['name']}")
+    logger.info(f"  Principles : {len(self_model.get_principles())}")
+    logger.info(f"  {milestones.summary()}")
     logger.info("=" * 50)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 11. Shutdown
+    # 12. Shutdown signal
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -256,7 +284,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     await stop_event.wait()
 
-    # 12. Graceful shutdown
+    # 13. Graceful shutdown
     ticker.stop()
     monitor.stop()
     tick_task.cancel()
@@ -265,7 +293,11 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     except asyncio.CancelledError:
         pass
 
-    values.save_weekly_snapshot()   # save final state of the day
+    # Final snapshots + drift checks
+    values.save_weekly_snapshot()
+    self_model.save_weekly_snapshot()
+    await self_model.check_drift(values)
+
     mem.add_episode("system.stop", "Digital Being stopped cleanly", outcome="success")
     mem.close()
     logger.info("Digital Being shut down cleanly.")
