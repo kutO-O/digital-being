@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 21: Added /shell/stats and /shell/execute endpoints.
+Stage 22: Added /time endpoint for TimePerception.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from core.self_modification import SelfModificationEngine
     from core.shell_executor import ShellExecutor
     from core.strategy_engine import StrategyEngine
+    from core.time_perception import TimePerception  # Stage 22
     from core.value_engine import ValueEngine
 
 log = logging.getLogger("digital_being.introspection_api")
@@ -64,8 +65,9 @@ class IntrospectionAPI:
         app.router.add_get("/modifications", self._handle_modifications)
         app.router.add_get("/beliefs", self._handle_beliefs)
         app.router.add_get("/contradictions", self._handle_contradictions)
-        app.router.add_get("/shell/stats", self._handle_shell_stats)  # Stage 21
-        app.router.add_post("/shell/execute", self._handle_shell_execute)  # Stage 21
+        app.router.add_get("/shell/stats", self._handle_shell_stats)
+        app.router.add_post("/shell/execute", self._handle_shell_execute)
+        app.router.add_get("/time", self._handle_time)  # Stage 22
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
@@ -88,6 +90,27 @@ class IntrospectionAPI:
             raise
         response.headers.update(_CORS_HEADERS)
         return response
+
+    async def _handle_time(self, request: web.Request) -> web.Response:
+        """GET /time - Stage 22"""
+        try:
+            tp = self._c.get("time_perception")
+            if not tp:
+                return self._json({"error": "TimePerception not available"})
+            
+            current_context = tp._state.get("current_context", {})
+            current_patterns = tp.get_current_patterns(min_confidence=0.5)
+            all_patterns = tp.get_patterns(min_confidence=0.4)
+            stats = tp.get_stats()
+            
+            return self._json({
+                "current_context": current_context,
+                "current_patterns": current_patterns,
+                "all_patterns": all_patterns,
+                "stats": stats,
+            })
+        except Exception as e:
+            return self._error(e)
 
     async def _handle_shell_stats(self, request: web.Request) -> web.Response:
         """GET /shell/stats - Stage 21"""

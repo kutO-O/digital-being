@@ -1,77 +1,85 @@
+# Digital Being Configuration
+
 system:
-  version: "0.21.0"
+  version: "0.22.0"  # Stage 22: TimePerception
 
 ticks:
   light_tick_sec: 5
   heavy_tick_sec: 60
 
-memory:
-  episodic_db: "memory/episodic.db"
-  semantic_lance: "memory/semantic.lance"
+paths:
+  state: "memory/state.json"
+  inbox: "inbox.txt"
+  outbox: "outbox.txt"
+  snapshots: "snapshots"
 
 logging:
   dir: "logs"
   level: "INFO"
 
-paths:
-  state: "memory/state.json"
-  snapshots: "memory/snapshots"
-  inbox: "inbox.txt"
-  outbox: "outbox.txt"
+memory:
+  episodic_db: "memory/episodic.db"
+  semantic_lance: "memory/semantic_lance"
 
 ollama:
-  base_url: "http://localhost:11434"
+  url: "http://localhost:11434"
   strategy_model: "llama3.2:3b"
   embed_model: "nomic-embed-text"
+  timeout_sec: 15
 
 scores:
   drift:
+    snapshot_dir: "snapshots/values"
     threshold: 0.15
-    snapshot_dir: "memory/value_snapshots"
-    enabled: true
-    weekly: true
 
-world:
-  watch_dirs:
-    - "."
-  ignore_patterns:
-    - "*.pyc"
-    - "__pycache__"
-    - ".git"
-    - "*.log"
-    - "*.db"
+strategy:
+  daily_update_hours: 24
+  weekly_update_hours: 168
+  vector_update_hours: 720
+
+dream:
+  enabled: true
+  interval_hours: 6
+
+resources:
+  budget:
+    tick_timeout_sec: 30
 
 api:
   enabled: true
   host: "127.0.0.1"
   port: 8765
 
-resources:
-  budget:
-    tick_timeout_sec: 30
-    max_llm_calls_per_tick: 3
-
-dream:
-  enabled: true
-  interval_hours: 6
-
 reflection:
+  enabled: true
   every_n_ticks: 10
 
 narrative:
+  enabled: true
   every_n_ticks: 15
 
 attention:
+  enabled: true
   top_k: 5
   min_score: 0.4
   max_context_chars: 1500
 
 curiosity:
   enabled: true
-  ask_every_n_ticks: 12
-  answer_every_n_ticks: 8
+  ask_every_n_ticks: 20
+  answer_every_n_ticks: 10
+
+self_modification:
+  enabled: true
+  suggest_every_n_ticks: 50
 
 shell:
   enabled: true
   allowed_dir: "."
   max_output_chars: 2000
+
+# Stage 22: Time Perception
+time_perception:
+  enabled: true
+  max_patterns: 50
+  min_confidence: 0.4
