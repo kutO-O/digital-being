@@ -1,14 +1,18 @@
 # Digital Being — System Configuration
-# Phase 7: Version bump to 0.7.0
+# Stage 10: dream section added
 
 system:
   name: "digital_being"
-  version: "0.7.0"
+  version: "0.10.0"
   debug: false
 
 ticks:
   light_tick_sec: 3
   heavy_tick_sec: 45
+
+dream:
+  enabled: true
+  interval_hours: 6
 
 ollama:
   strategy_model: "llama3.2"

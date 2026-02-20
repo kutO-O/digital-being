@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 9: VectorMemory added. LightTick and HeavyTick run in parallel.
+Stage 10: DreamMode added as background asyncio task.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from core.dream_mode import DreamMode
 from core.event_bus import EventBus
 from core.file_monitor import FileMonitor
 from core.heavy_tick import HeavyTick
@@ -193,6 +194,51 @@ def make_strategy_handlers(
     return {"strategy.vector_changed": on_vector_changed}
 
 
+def make_dream_handlers(mem: EpisodicMemory, logger: logging.Logger) -> dict:
+    async def on_dream_completed(data: dict) -> None:
+        logger.info(
+            f"[DreamMode] Completed. "
+            f"insights={data.get('insights_count', 0)} "
+            f"vector_updated={data.get('vector_updated', False)} "
+            f"principle_added={data.get('principle_added', False)} "
+            f"run_count={data.get('run_count', '?')}"
+        )
+        mem.add_episode(
+            "dream.completed",
+            f"Цикл мечтаний завершён. "
+            f"Инсайтов: {data.get('insights_count', 0)}, "
+            f"вектор обновлён: {data.get('vector_updated', False)}",
+            outcome="success",
+        )
+    return {"dream.completed": on_dream_completed}
+
+
+# ────────────────────────────────────────────────────────────────────
+# Dream loop
+# ────────────────────────────────────────────────────────────────────
+async def _dream_loop(
+    dream: DreamMode,
+    stop_event: asyncio.Event,
+    logger: logging.Logger,
+) -> None:
+    """Background task: checks every 5 minutes if Dream Mode should run."""
+    logger.info("DreamMode loop started.")
+    while not stop_event.is_set():
+        await asyncio.sleep(300)   # 5-minute poll interval
+        if stop_event.is_set():
+            break
+        if dream.should_run():
+            logger.info("DreamMode: interval elapsed — starting dream cycle.")
+            try:
+                loop   = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, dream.run)
+                if result.get("skipped"):
+                    logger.info(f"DreamMode: skipped ({result.get('reason', '?')}).")
+            except Exception as e:
+                logger.error(f"DreamMode loop error: {e}")
+    logger.info("DreamMode loop stopped.")
+
+
 # ────────────────────────────────────────────────────────────────────
 # Async main
 # ────────────────────────────────────────────────────────────────────
@@ -209,12 +255,12 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         return
     mem.add_episode("system.start", "Digital Being started", outcome="success")
 
-    principles = mem.get_active_principles()
-    if principles:
-        for p in principles:
+    principles_stored = mem.get_active_principles()
+    if principles_stored:
+        for p in principles_stored:
             logger.info(f"  • [{p['id']}] {p['text']}")
 
-    # 2. VectorMemory (Stage 9)
+    # 2. VectorMemory
     vector_mem = VectorMemory(ROOT_DIR / "memory" / "vector_memory.db")
     vector_mem.init()
     logger.info(f"VectorMemory ready. Stored vectors: {vector_mem.count()}")
@@ -260,6 +306,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         bus.subscribe(event_name, handler)
     for event_name, handler in make_self_handlers(self_model, mem, logger).items():
         bus.subscribe(event_name, handler)
+    for event_name, handler in make_dream_handlers(mem, logger).items():
+        bus.subscribe(event_name, handler)
 
     # 9. WorldModel
     world = WorldModel(bus=bus, mem=mem)
@@ -269,7 +317,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     monitor = FileMonitor(watch_path=ROOT_DIR, bus=bus)
     monitor.start(loop)
 
-    # 11. StrategyEngine (Stage 8)
+    # 11. StrategyEngine
     strategy = StrategyEngine(memory_dir=ROOT_DIR / "memory", event_bus=bus)
     strategy.load()
 
@@ -277,7 +325,23 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     for event_name, handler in make_strategy_handlers(milestones, mem, logger).items():
         bus.subscribe(event_name, handler)
 
-    # 12. HeavyTick (Stage 9: vector_memory injected)
+    # 12. DreamMode (Stage 10)
+    dream_cfg      = cfg.get("dream", {})
+    dream_enabled  = dream_cfg.get("enabled", True)
+    dream_interval = float(dream_cfg.get("interval_hours", 6))
+    dream = DreamMode(
+        episodic=mem,
+        vector_memory=vector_mem,
+        strategy=strategy,
+        values=values,
+        self_model=self_model,
+        ollama=ollama,
+        event_bus=bus,
+        memory_dir=ROOT_DIR / "memory",
+        interval_hours=dream_interval,
+    )
+
+    # 13. HeavyTick
     heavy = HeavyTick(
         cfg=cfg,
         ollama=ollama,
@@ -292,17 +356,17 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         vector_memory=vector_mem,
     )
 
-    # 13. LightTick
+    # 14. LightTick
     ticker = LightTick(cfg=cfg, bus=bus)
 
-    # 14. Initial world scan
+    # 15. Initial world scan
     file_count = await world.scan(ROOT_DIR)
     mem.add_episode("world.scan",
                     f"Initial scan: {file_count} files",
                     outcome="success",
                     data={"file_count": file_count})
 
-    # 15. Startup banner
+    # 16. Startup banner
     logger.info("=" * 56)
     logger.info(f"  World        : {world.summary()}")
     logger.info(f"  Values       : {values.to_prompt_context()}")
@@ -311,11 +375,12 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  {milestones.summary()}")
     logger.info(f"  Strategy     : {strategy.to_prompt_context()!r:.120}")
     logger.info(f"  Vectors      : {vector_mem.count()} stored")
+    logger.info(f"  DreamMode    : {'enabled' if dream_enabled else 'disabled'}, interval={dream_interval}h")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
     logger.info("Running... (Ctrl+C to stop)")
 
-    # 16. Launch ticks in parallel
+    # 17. Launch all tasks
     stop_event = asyncio.Event()
 
     def _signal_handler():
@@ -330,15 +395,24 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     light_task = asyncio.create_task(ticker.start(), name="light_tick")
     heavy_task = asyncio.create_task(heavy.start(), name="heavy_tick")
+    dream_task = (
+        asyncio.create_task(
+            _dream_loop(dream, stop_event, logger), name="dream_loop"
+        ) if dream_enabled else None
+    )
 
     await stop_event.wait()
 
-    # 17. Graceful shutdown
+    # 18. Graceful shutdown
     ticker.stop()
     heavy.stop()
     monitor.stop()
 
-    for task in (light_task, heavy_task):
+    tasks_to_cancel = [light_task, heavy_task]
+    if dream_task is not None:
+        tasks_to_cancel.append(dream_task)
+
+    for task in tasks_to_cancel:
         task.cancel()
         try:
             await task
