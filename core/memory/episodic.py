@@ -12,6 +12,9 @@ Design rules:
   - check_same_thread=False for asyncio compatibility
   - All writes are validated before touching the DB
   - Errors never crash the caller — they are logged and skipped
+
+Changelog:
+  Stage 8 — added get_episodes_by_type() for reflect action and StrategyEngine novelty.
 """
 
 from __future__ import annotations
@@ -263,6 +266,44 @@ class EpisodicMemory:
             return [dict(r) for r in rows]
         except sqlite3.Error as e:
             log.error(f"[get_recent_episodes] DB error: {e}")
+            return []
+
+    def get_episodes_by_type(
+        self,
+        event_type: str,
+        limit: int = 20,
+        outcome: str | None = None,
+    ) -> list[dict]:
+        """
+        Return episodes filtered by event_type (and optionally outcome), newest first.
+
+        Added in Stage 8 — used by:
+          - HeavyTick._action_reflect()  (event_type="error", outcome=None)
+          - StrategyEngine._apply_novelty() via count_recent_similar()
+
+        Args:
+            event_type: exact match on the event_type column.
+            limit:      max rows returned (default 20).
+            outcome:    if provided, additionally filter by outcome column.
+        """
+        try:
+            if outcome is not None:
+                rows = self._conn.execute(
+                    "SELECT * FROM episodes "
+                    "WHERE event_type = ? AND outcome = ? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (event_type, outcome, limit),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM episodes "
+                    "WHERE event_type = ? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (event_type, limit),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error as e:
+            log.error(f"[get_episodes_by_type] DB error: {e}")
             return []
 
     def get_errors_by_type(self, error_type: str) -> list[dict]:

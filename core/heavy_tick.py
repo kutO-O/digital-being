@@ -1,12 +1,17 @@
 """
 Digital Being — HeavyTick
-Phase 7: The main thinking cycle. Runs every heavy_tick_sec seconds.
+Stage 8: Integrated with StrategyEngine.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always)
-  Step 2 — Goal Selection      (skipped in 'defensive' mode)
+  Step 2 — Goal Selection      via StrategyEngine.select_goal() (skipped in 'defensive' mode)
   Step 3 — Action              (skipped in 'defensive' mode or action_type='observe')
   Step 4 — After-action        (always, updates scores + publishes value.changed)
+
+Extra logic added in Stage 8:
+  - strategy_engine.set_now() called after every action
+  - strategy_engine.should_update_weekly() checked each tick;
+    if True → generate new weekly direction via LLM → update_weekly()
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
@@ -24,11 +29,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.episodic import EpisodicMemory
     from core.memory.episodic import EpisodicMemory
     from core.milestones import Milestones
     from core.ollama_client import OllamaClient
     from core.self_model import SelfModel
+    from core.strategy_engine import StrategyEngine
     from core.value_engine import ValueEngine
     from core.world_model import WorldModel
 
@@ -52,7 +57,7 @@ class HeavyTick:
     All dependencies are injected — no globals.
 
     Lifecycle:
-        ht = HeavyTick(cfg, ollama, world, values, self_model, mem, milestones)
+        ht = HeavyTick(cfg, ollama, world, values, self_model, mem, milestones, strategy)
         task = asyncio.create_task(ht.start())
         # ...
         ht.stop()
@@ -69,6 +74,7 @@ class HeavyTick:
         milestones: "Milestones",
         log_dir:    Path,
         sandbox_dir: Path,
+        strategy:   "StrategyEngine | None" = None,
     ) -> None:
         self._cfg         = cfg
         self._ollama      = ollama
@@ -79,6 +85,7 @@ class HeavyTick:
         self._milestones  = milestones
         self._log_dir     = log_dir
         self._sandbox_dir = sandbox_dir
+        self._strategy    = strategy          # Stage 8: optional, for backwards compat
 
         self._interval     = cfg["ticks"]["heavy_tick_sec"]
         self._timeout      = int(
@@ -171,14 +178,14 @@ class HeavyTick:
             )
             return
 
-        # ─ Step 2: Goal Selection ─────────────────────────────────────
+        # ─ Step 2: Goal Selection (Stage 8: via StrategyEngine) ──────────
         goal_data = await self._step_goal_selection(n, monologue)
 
         action_type = goal_data.get("action_type", "observe")
         risk_level  = goal_data.get("risk_level",  "low")
         goal_text   = goal_data.get("goal",         _DEFAULT_GOAL["goal"])
 
-        # ─ Step 3: Action ────────────────────────────────────────────
+        # ─ Step 3: Action ────────────────────────────────────────────────
         success = True
         outcome = "observe"
 
@@ -199,9 +206,13 @@ class HeavyTick:
             log.warning(f"[HeavyTick #{n}] Unknown action_type='{action_type}'. Treating as observe.")
             outcome = "observed"
 
-        # ─ Step 4: After-action ──────────────────────────────────────
+        # ─ Step 4: After-action ──────────────────────────────────────────
         self._values.update_after_action(success=success)
         await self._values._publish_changed()
+
+        # Stage 8: persist current goal to StrategyEngine
+        if self._strategy is not None:
+            self._strategy.set_now(goal_text, action_type)
 
         self._mem.add_episode(
             f"heavy_tick.{action_type}",
@@ -225,6 +236,47 @@ class HeavyTick:
         )
         log.info(f"[HeavyTick #{n}] Completed. action={action_type} outcome={outcome}")
 
+        # Stage 8: update weekly direction if 24h passed
+        if self._strategy is not None:
+            await self._maybe_update_weekly(n)
+
+    # ────────────────────────────────────────────────────────────
+    # Stage 8: weekly direction refresh
+    # ────────────────────────────────────────────────────────────
+    async def _maybe_update_weekly(self, n: int) -> None:
+        """Check if weekly direction needs refresh; ask LLM and update if so."""
+        if not self._strategy.should_update_weekly():
+            return
+
+        log.info(f"[HeavyTick #{n}] Weekly direction update triggered.")
+        context = self._strategy.to_prompt_context()
+        prompt = (
+            f"{context}\n\n"
+            f"Прошли сутки. Сформулируй новое недельное направление (1 предложение) "
+            f"которое отражает текущее состояние системы и долгосрочный вектор. "
+            f"Отвечай ТОЛЬКО текстом направления без пояснений."
+        )
+        system = "Ты — Digital Being. Формулируй кратко и по делу."
+
+        try:
+            loop      = asyncio.get_event_loop()
+            direction = await loop.run_in_executor(
+                None, lambda: self._ollama.chat(prompt, system)
+            )
+            direction = direction.strip() if direction else ""
+            if direction:
+                self._strategy.update_weekly(direction)
+                self._mem.add_episode(
+                    "strategy.weekly_update",
+                    f"Недельное направление обновлено: '{direction[:200]}'",
+                    outcome="success",
+                )
+                log.info(f"[HeavyTick #{n}] Weekly direction updated.")
+            else:
+                log.warning(f"[HeavyTick #{n}] Weekly update: LLM returned empty.")
+        except Exception as e:
+            log.error(f"[HeavyTick #{n}] Weekly update failed: {e}")
+
     # ────────────────────────────────────────────────────────────
     # Step implementations
     # ────────────────────────────────────────────────────────────
@@ -241,10 +293,18 @@ class HeavyTick:
             for e in recent_eps
         ) if recent_eps else "нет"
 
+        # Stage 8: enrich monologue prompt with strategy context
+        strategy_ctx = (
+            self._strategy.to_prompt_context()
+            if self._strategy is not None
+            else ""
+        )
+
         prompt = (
             f"Твоё состояние:\n"
             f"{self._self_model.to_prompt_context()}\n"
             f"{self._values.to_prompt_context()}\n"
+            f"{strategy_ctx}\n"
             f"Мир: {self._world.summary()}\n"
             f"Последние изменения: {changes_str}\n"
             f"Последние эпизоды: {eps_str}\n\n"
@@ -253,7 +313,6 @@ class HeavyTick:
         )
         system = "Tы — Digital Being. Aвтономная система. Отвечай от первого лица. Будь краток."
 
-        # Run blocking ollama call in thread pool to not block event loop
         loop      = asyncio.get_event_loop()
         monologue = await loop.run_in_executor(
             None, lambda: self._ollama.chat(prompt, system)
@@ -262,11 +321,9 @@ class HeavyTick:
         if not monologue:
             monologue = "(monologue unavailable — LLM did not respond)"
 
-        # Write to monologue.log
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
         self._monologue_log.info(f"[{ts}] TICK #{n}\n{monologue}\n---")
 
-        # Persist to episodic
         self._mem.add_episode(
             "monologue",
             monologue[:1000],
@@ -277,14 +334,33 @@ class HeavyTick:
         return monologue
 
     async def _step_goal_selection(self, n: int, monologue: str) -> dict:
-        """Step 2: Ask LLM to choose a goal. Returns parsed goal dict."""
-        mode = self._values.get_mode()
-        c_expl  = self._values.get_conflict_winner("exploration_vs_stability")
-        c_act   = self._values.get_conflict_winner(
+        """
+        Step 2: Select goal.
+        Stage 8: delegates to StrategyEngine.select_goal() when available.
+        Falls back to direct LLM call if StrategyEngine is not injected.
+        """
+        # ── Stage 8 path ──────────────────────────────────────────
+        if self._strategy is not None:
+            goal_data = await self._strategy.select_goal(
+                value_engine=self._values,
+                world_model=self._world,
+                episodic=self._mem,
+                ollama=self._ollama,
+            )
+            log.info(
+                f"[HeavyTick #{n}] Goal (via StrategyEngine): "
+                f"'{goal_data['goal'][:80]}' "
+                f"action={goal_data['action_type']} risk={goal_data['risk_level']}"
+            )
+            return goal_data
+
+        # ── Legacy path (no StrategyEngine) ──────────────────────
+        mode   = self._values.get_mode()
+        c_expl = self._values.get_conflict_winner("exploration_vs_stability")
+        c_act  = self._values.get_conflict_winner(
             "action_vs_caution",
             risk_score=0.25 if mode in ("curious", "normal") else 0.5,
         )
-
         prompt = (
             f"{monologue}\n\n"
             f"Текущий режим: {mode}\n"
@@ -299,14 +375,13 @@ class HeavyTick:
             "Ты — Digital Being. Отвечай ТОЛЬКО валидным JSON-объектом. "
             "Никакого дополнительного текста."
         )
-
         loop     = asyncio.get_event_loop()
         raw      = await loop.run_in_executor(
             None, lambda: self._ollama.chat(prompt, system)
         )
         goal_data = self._parse_goal_json(raw, n)
         log.info(
-            f"[HeavyTick #{n}] Goal selected: '{goal_data['goal'][:80]}' "
+            f"[HeavyTick #{n}] Goal (legacy): '{goal_data['goal'][:80]}' "
             f"action={goal_data['action_type']} risk={goal_data['risk_level']}"
         )
         return goal_data
@@ -349,11 +424,9 @@ class HeavyTick:
         Action: reflect on recent errors, form a new principle.
         Asks LLM to analyse last 5 errors and produce a principle.
         """
-        # Fetch recent error episodes
         try:
             errors = self._mem.get_episodes_by_type("error", limit=5)
             if not errors:
-                # Try broader search
                 errors = [
                     e for e in (self._mem.get_recent_episodes(20) or [])
                     if e.get("outcome") == "error"
@@ -412,11 +485,9 @@ class HeavyTick:
         if not raw:
             return dict(_DEFAULT_GOAL)
         try:
-            # Direct parse first
             return json.loads(raw)
         except json.JSONDecodeError:
             pass
-        # Try to find JSON block inside the text
         start = raw.find("{")
         end   = raw.rfind("}")
         if start != -1 and end != -1 and end > start:
@@ -429,7 +500,7 @@ class HeavyTick:
 
     @staticmethod
     def _make_file_logger(name: str, path: Path) -> logging.Logger:
-        """Create a dedicated file logger that doesn’t propagate to root."""
+        """Create a dedicated file logger that doesn't propagate to root."""
         path.parent.mkdir(parents=True, exist_ok=True)
         logger  = logging.getLogger(name)
         if not logger.handlers:
