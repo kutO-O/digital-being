@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 20: BeliefSystem and ContradictionResolver integrated.
+Stage 21: ShellExecutor integrated.
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from pathlib import Path
 import yaml
 
 from core.attention_system import AttentionSystem
-from core.belief_system import BeliefSystem  # Stage 19
-from core.contradiction_resolver import ContradictionResolver  # Stage 20
+from core.belief_system import BeliefSystem
+from core.contradiction_resolver import ContradictionResolver
 from core.curiosity_engine import CuriosityEngine
 from core.dream_mode import DreamMode
 from core.emotion_engine import EmotionEngine
@@ -35,6 +35,7 @@ from core.ollama_client import OllamaClient
 from core.reflection_engine import ReflectionEngine
 from core.self_model import SelfModel
 from core.self_modification import SelfModificationEngine
+from core.shell_executor import ShellExecutor  # Stage 21
 from core.strategy_engine import StrategyEngine
 from core.value_engine import ValueEngine
 from core.world_model import WorldModel
@@ -320,15 +321,28 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     mod_stats = self_modification.get_stats()
     logger.info(f"SelfModificationEngine ready. applied={mod_stats['total_applied']} approved={mod_stats['approved']} rejected={mod_stats['rejected']}")
 
-    # Stage 19: BeliefSystem
     belief_system = BeliefSystem(state_path=ROOT_DIR / "memory" / "beliefs.json")
     belief_stats = belief_system.get_stats()
     logger.info(f"BeliefSystem ready. active={belief_stats['active']} strong={belief_stats['strong']} rejected={belief_stats['rejected']} total_formed={belief_stats['total_beliefs_formed']}")
 
-    # Stage 20: ContradictionResolver
     contradiction_resolver = ContradictionResolver(state_path=ROOT_DIR / "memory" / "contradictions.json")
     contr_stats = contradiction_resolver.get_stats()
     logger.info(f"ContradictionResolver ready. pending={contr_stats['pending']} resolved={contr_stats['resolved']} total_detected={contr_stats['total_detected']}")
+
+    # Stage 21: ShellExecutor
+    shell_cfg = cfg.get("shell", {})
+    shell_enabled = bool(shell_cfg.get("enabled", True))
+    shell_executor = None
+    if shell_enabled:
+        allowed_dir = Path(shell_cfg.get("allowed_dir", "."))
+        if not allowed_dir.is_absolute():
+            allowed_dir = ROOT_DIR / allowed_dir
+        max_output_chars = int(shell_cfg.get("max_output_chars", 2000))
+        shell_executor = ShellExecutor(allowed_dir=allowed_dir, memory_dir=ROOT_DIR / "memory", max_output_chars=max_output_chars)
+        shell_stats = shell_executor.get_stats()
+        logger.info(f"ShellExecutor ready. executed={shell_stats['total_executed']} rejected={shell_stats['total_rejected']} errors={shell_stats['total_errors']}")
+    else:
+        logger.info("ShellExecutor disabled.")
 
     heavy = HeavyTick(
         cfg=cfg, ollama=ollama, world=world, values=values, self_model=self_model, mem=mem, milestones=milestones,
@@ -337,8 +351,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         goal_persistence=goal_persistence, attention_system=attention_system,
         curiosity_engine=curiosity_engine if curiosity_enabled else None,
         self_modification=self_modification,
-        belief_system=belief_system,              # Stage 19
-        contradiction_resolver=contradiction_resolver,  # Stage 20
+        belief_system=belief_system,
+        contradiction_resolver=contradiction_resolver,
+        shell_executor=shell_executor,  # Stage 21
     )
 
     ticker = LightTick(cfg=cfg, bus=bus)
@@ -354,8 +369,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "heavy_tick": heavy, "emotion_engine": emotion_engine, "reflection_engine": reflection_engine,
             "narrative_engine": narrative_engine, "goal_persistence": goal_persistence, "attention_system": attention_system,
             "curiosity_engine": curiosity_engine, "self_modification": self_modification,
-            "belief_system": belief_system,           # Stage 19
-            "contradiction_resolver": contradiction_resolver,  # Stage 20
+            "belief_system": belief_system,
+            "contradiction_resolver": contradiction_resolver,
+            "shell_executor": shell_executor,  # Stage 21
         },
         start_time=start_time,
     )
@@ -384,6 +400,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  SelfMod      : applied={mod_stats['total_applied']} approved={mod_stats['approved']} rejected={mod_stats['rejected']}")
     logger.info(f"  Beliefs      : active={belief_stats['active']} strong={belief_stats['strong']} rejected={belief_stats['rejected']}")
     logger.info(f"  Contradictns : pending={contr_stats['pending']} resolved={contr_stats['resolved']}")
+    if shell_executor:
+        shell_stats = shell_executor.get_stats()
+        logger.info(f"  ShellExec    : executed={shell_stats['total_executed']} rejected={shell_stats['total_rejected']}")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 56)
