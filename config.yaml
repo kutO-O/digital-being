@@ -1,9 +1,9 @@
 # Digital Being — System Configuration
-# Phase 2: Added inbox, outbox, snapshots paths
+# Phase 3: Version bump to 0.3.0
 
 system:
   name: "digital_being"
-  version: "0.2.0"
+  version: "0.3.0"
   debug: false
 
 ticks:
