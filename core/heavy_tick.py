@@ -1,6 +1,6 @@
 """
 Digital Being — HeavyTick
-Stage 17: CuriosityEngine integration.
+Stage 18: SelfModificationEngine integration.
 
 Each tick executes in strict order (with per-tick timeout):
   Step 1 — Internal Monologue  (always) + embed → VectorMemory
@@ -10,13 +10,13 @@ Each tick executes in strict order (with per-tick timeout):
   Step 4 — After-action (includes emotion update + reflection trigger
             + narrative trigger + GoalPersistence mark_completed on success)
   Step 5 — Curiosity: generate questions / seek answers (Stage 17)
+  Step 6 — Self-Modification: every 50 ticks, suggest and apply improvements (Stage 18)
 
-New in Stage 17:
-  - curiosity_engine injected (optional, gracefully skipped if None)
-  - After _step_after_action():
-      • should_ask()  → generate_questions() → add_question()
-      • should_answer() → get_next_question() → seek_answer() → answer_question()
-  - _step_monologue(): open questions appended to prompt.
+New in Stage 18:
+  - self_modification injected (optional, gracefully skipped if None)
+  - After curiosity step:
+      • should_suggest()  → suggest_improvements() → propose() up to 2 suggestions
+  - Config changes are logged and published via EventBus
 
 Resource budget:
   - Max 3 LLM calls per tick (enforced by OllamaClient)
@@ -24,6 +24,7 @@ Resource budget:
   - Reflection adds 1 extra LLM call on reflection ticks (outside normal budget)
   - Narrative adds 1 extra LLM call on narrative ticks (outside normal budget)
   - Curiosity adds up to 2 extra LLM calls (generate + seek) on curiosity ticks
+  - Self-Modification adds up to 3 extra LLM calls (suggest + 2x verify) every 50 ticks
   - Max 30 s per tick (asyncio.wait_for)
 """
 
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
     from core.narrative_engine import NarrativeEngine
     from core.ollama_client import OllamaClient
     from core.reflection_engine import ReflectionEngine
+    from core.self_modification import SelfModificationEngine
     from core.self_model import SelfModel
     from core.strategy_engine import StrategyEngine
     from core.value_engine import ValueEngine
@@ -95,6 +97,7 @@ class HeavyTick:
         goal_persistence:  "GoalPersistence | None"  = None,  # Stage 15
         attention_system:  "AttentionSystem | None"  = None,  # Stage 16
         curiosity_engine:  "CuriosityEngine | None"  = None,  # Stage 17
+        self_modification: "SelfModificationEngine | None" = None,  # Stage 18
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -113,6 +116,7 @@ class HeavyTick:
         self._goal_pers    = goal_persistence   # Stage 15
         self._attention    = attention_system   # Stage 16
         self._curiosity    = curiosity_engine   # Stage 17
+        self._self_mod     = self_modification  # Stage 18
 
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(
@@ -143,9 +147,9 @@ class HeavyTick:
             log_dir / "decisions.log",
         )
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Main loop
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     async def start(self) -> None:
         self._running = True
         self._sandbox_dir.mkdir(parents=True, exist_ok=True)
@@ -185,9 +189,9 @@ class HeavyTick:
         self._running = False
         log.info("HeavyTick stopped.")
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Tick body
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     async def _run_tick(self) -> None:
         n = self._tick_count
         log.info(f"[HeavyTick #{n}] Starting.")
@@ -258,9 +262,84 @@ class HeavyTick:
         # Step 5: Curiosity Engine (Stage 17)
         await self._step_curiosity(n)
 
-    # ────────────────────────────────────────────────────────────
+        # Step 6: Self-Modification Engine (Stage 18)
+        await self._step_self_modification(n)
+
+    # ────────────────────────────────────────────────────────────────
+    # Stage 18: Self-Modification step
+    # ────────────────────────────────────────────────────────────────
+    async def _step_self_modification(self, n: int) -> None:
+        """Генерация и применение предложений по изменению config.yaml."""
+        if self._self_mod is None:
+            return
+
+        if not self._self_mod.should_suggest(n):
+            return
+
+        log.info(f"[HeavyTick #{n}] SelfModificationEngine: generating suggestions.")
+
+        try:
+            loop = asyncio.get_event_loop()
+
+            # Get reflection log and emotion state
+            reflection_log = (
+                self._reflection.load_log() if self._reflection else []
+            )
+            emotion_state = (
+                self._emotions.get_state() if self._emotions else {}
+            )
+
+            # Generate suggestions
+            suggestions = await loop.run_in_executor(
+                None,
+                lambda: self._self_mod.suggest_improvements(
+                    reflection_log, emotion_state
+                ),
+            )
+
+            if not suggestions:
+                log.info(f"[HeavyTick #{n}] SelfModificationEngine: no suggestions generated.")
+                return
+
+            log.info(
+                f"[HeavyTick #{n}] SelfModificationEngine: "
+                f"{len(suggestions)} suggestion(s) generated."
+            )
+
+            # Apply up to 2 suggestions per cycle
+            for s in suggestions[:2]:
+                key = s.get("key", "")
+                value = s.get("value")
+                reason = s.get("reason", "")
+
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: self._self_mod.propose(key, value, reason),
+                )
+
+                status = result.get("status", "unknown")
+                if status == "approved":
+                    log.info(
+                        f"[HeavyTick #{n}] Config change APPROVED: "
+                        f"{key} = {value} (was {result.get('old')})"
+                    )
+                    self._mem.add_episode(
+                        "self_modification.approved",
+                        f"Config change: {key} = {value}. Reason: {reason[:200]}",
+                        outcome="success",
+                    )
+                else:
+                    log.info(
+                        f"[HeavyTick #{n}] Config change REJECTED: "
+                        f"{key} = {value}. Reason: {result.get('reason', '?')}"
+                    )
+
+        except Exception as e:
+            log.error(f"[HeavyTick #{n}] SelfModificationEngine error: {e}")
+
+    # ────────────────────────────────────────────────────────────────
     # Stage 17: Curiosity step
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     async def _step_curiosity(self, n: int) -> None:
         """Генерация вопросов и поиск ответов через CuriosityEngine."""
         if self._curiosity is None or not self._curiosity_enabled:
@@ -309,9 +388,9 @@ class HeavyTick:
                     log.error(f"[HeavyTick #{n}] CuriosityEngine seek_answer error: {e}")
                     self._curiosity.answer_question(q["id"], "Ответ не найден")
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Stage 16: attention helpers
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     def _attention_filter_episodes(self, episodes: list[dict]) -> list[dict]:
         """Filter episodes through AttentionSystem if available."""
         if self._attention is None or not episodes:
@@ -351,9 +430,9 @@ class HeavyTick:
             log.debug(f"_attention_focus_summary(): {e}")
             return ""
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Step 4: After-action (extracted for clarity)
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     async def _step_after_action(
         self,
         n:           int,
@@ -425,9 +504,9 @@ class HeavyTick:
             deleted = self._vector_mem.delete_old(days=30)
             log.info(f"[HeavyTick #{n}] VectorMemory cleanup: {deleted} old records removed.")
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Stage 12 helper: emotion update
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     def _update_emotions(self, event_type: str, outcome: str) -> None:
         """Safe wrapper — never raises, logs errors."""
         if self._emotions is None:
@@ -442,9 +521,9 @@ class HeavyTick:
         except Exception as e:
             log.error(f"EmotionEngine.update() failed: {e}")
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Stage 9 helpers
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     async def _embed_and_store(self, ep_id: int | None, event_type: str, text: str) -> None:
         """
         Embed `text` via Ollama and store in VectorMemory.
@@ -502,9 +581,9 @@ class HeavyTick:
             log.debug(f"_semantic_context(): {e}")
             return ""
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Weekly direction refresh
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     async def _maybe_update_weekly(self, n: int) -> None:
         if not self._strategy.should_update_weekly():
             return
@@ -536,9 +615,9 @@ class HeavyTick:
         except Exception as e:
             log.error(f"[HeavyTick #{n}] Weekly update failed: {e}")
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Step implementations
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     async def _step_monologue(self, n: int) -> tuple[str, int | None]:
         """
         Step 1: Generate monologue.
@@ -647,7 +726,7 @@ class HeavyTick:
         attn_ctx     = self._attention_build_context(filtered_eps)
         focus_summary = self._attention_focus_summary()
 
-        # ── Stage 8/9 path: StrategyEngine ─────────────────────
+        # ── Stage 8/9 path: StrategyEngine ─────────────────
         if self._strategy is not None:
             goal_data = await self._strategy.select_goal(
                 value_engine=self._values,
@@ -665,7 +744,7 @@ class HeavyTick:
             )
             return goal_data
 
-        # ── Legacy path ─────────────────────────────────────────
+        # ── Legacy path ─────────────────────────────
         mode   = self._values.get_mode()
         c_expl = self._values.get_conflict_winner("exploration_vs_stability")
         c_act  = self._values.get_conflict_winner(
@@ -774,9 +853,9 @@ class HeavyTick:
             log.info(f"[HeavyTick #{n}] Reflect: principle already exists.")
             return True, "reflect:principle_duplicate"
 
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     # Helpers
-    # ────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
     @staticmethod
     def _parse_goal_json(raw: str, n: int) -> dict:
         if not raw:
