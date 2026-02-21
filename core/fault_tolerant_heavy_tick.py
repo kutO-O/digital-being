@@ -1,415 +1,465 @@
-"""Fault-tolerant Heavy Tick orchestrator."""
+"""Fault-Tolerant HeavyTick with Circuit Breaker, Health Monitoring, and Graceful Degradation."""
+
+from __future__ import annotations
 
 import asyncio
-import time
-from typing import Dict, Any, Optional, List
 import logging
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Dict, Any
 
-from core.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
-from core.health_monitor import HealthMonitor
-from core.fallback_cache import FallbackCache, FallbackStrategy
-from core.priority_budget import PriorityBudgetSystem, Priority
+from core.circuit_breaker import CircuitBreaker
+from core.health_monitor import HealthMonitor, SystemMode
+from core.priority_system import PriorityExecutor, Priority
+from core.fallback_generators import FallbackGenerators
+from core.resilient_ollama import ResilientOllamaClient
 
-logger = logging.getLogger('digital_being.fault_tolerant_heavy_tick')
+if TYPE_CHECKING:
+    from core.attention_system import AttentionSystem
+    from core.belief_system import BeliefSystem
+    from core.contradiction_resolver import ContradictionResolver
+    from core.curiosity_engine import CuriosityEngine
+    from core.emotion_engine import EmotionEngine
+    from core.goal_persistence import GoalPersistence
+    from core.memory.episodic import EpisodicMemory
+    from core.memory.vector_memory import VectorMemory
+    from core.milestones import Milestones
+    from core.narrative_engine import NarrativeEngine
+    from core.ollama_client import OllamaClient
+    from core.reflection_engine import ReflectionEngine
+    from core.self_modification import SelfModificationEngine
+    from core.self_model import SelfModel
+    from core.shell_executor import ShellExecutor
+    from core.social_layer import SocialLayer
+    from core.strategy_engine import StrategyEngine
+    from core.time_perception import TimePerception
+    from core.value_engine import ValueEngine
+    from core.world_model import WorldModel
+    from core.meta_cognition import MetaCognition
+
+log = logging.getLogger("digital_being.fault_tolerant_heavy_tick")
+
+# Adaptive timeouts per step (in seconds)
+STEP_TIMEOUTS = {
+    "monologue": 30,
+    "semantic_context": 10,
+    "goal_selection": 90,  # Most complex - multiple LLM calls
+    "action": 45,
+    "after_action": 20,
+    "curiosity": 30,
+    "self_modification": 25,
+    "belief_system": 30,
+    "contradiction_resolver": 30,
+    "time_perception": 15,
+    "social_interaction": 25,
+    "meta_cognition": 25,
+}
+
+# Step priorities
+STEP_PRIORITIES = {
+    "monologue": Priority.CRITICAL,
+    "semantic_context": Priority.IMPORTANT,
+    "goal_selection": Priority.CRITICAL,
+    "action": Priority.CRITICAL,
+    "after_action": Priority.CRITICAL,
+    "curiosity": Priority.OPTIONAL,
+    "self_modification": Priority.OPTIONAL,
+    "belief_system": Priority.IMPORTANT,
+    "contradiction_resolver": Priority.IMPORTANT,
+    "time_perception": Priority.OPTIONAL,
+    "social_interaction": Priority.IMPORTANT,
+    "meta_cognition": Priority.OPTIONAL,
+}
+
+_DEFAULT_GOAL: dict = {
+    "goal": "наблюдать за средой",
+    "reasoning": "LLM недоступен или не вернул валидный JSON",
+    "action_type": "observe",
+    "risk_level": "low",
+}
 
 
 class FaultTolerantHeavyTick:
     """
-    Fault-tolerant Heavy Tick orchestrator.
-    
-    Features:
-    - Circuit breakers prevent cascading failures
-    - Health monitoring detects degraded services
-    - Graceful degradation with fallback cache
-    - Priority budget ensures critical tasks always run
+    Fault-tolerant Heavy Tick execution with:
+    - Circuit Breaker protection for LLM calls
+    - Health Monitoring and auto-recovery
+    - Priority-based execution
+    - Graceful degradation on failures
+    - Automatic fallback with result caching
     - Parallel execution of optional steps
-    - Comprehensive error handling
-    
-    Architecture:
-        [Monologue] (CRITICAL, sequential)
-            ↓
-        [Goal Selection] (CRITICAL, sequential)
-            ↓
-        [Action] (CRITICAL, sequential)
-            ↓
-        [Curiosity | Beliefs | Social | Meta] (OPTIONAL, parallel)
     """
     
     def __init__(
         self,
-        ollama_client,
-        config: Dict[str, Any],
-    ):
-        """
-        Initialize fault-tolerant orchestrator.
+        cfg: dict,
+        ollama: "OllamaClient",
+        world: "WorldModel",
+        values: "ValueEngine",
+        self_model: "SelfModel",
+        mem: "EpisodicMemory",
+        milestones: "Milestones",
+        log_dir: Path,
+        sandbox_dir: Path,
+        strategy: Optional["StrategyEngine"] = None,
+        vector_memory: Optional["VectorMemory"] = None,
+        emotion_engine: Optional["EmotionEngine"] = None,
+        reflection_engine: Optional["ReflectionEngine"] = None,
+        narrative_engine: Optional["NarrativeEngine"] = None,
+        goal_persistence: Optional["GoalPersistence"] = None,
+        attention_system: Optional["AttentionSystem"] = None,
+        curiosity_engine: Optional["CuriosityEngine"] = None,
+        self_modification: Optional["SelfModificationEngine"] = None,
+        belief_system: Optional["BeliefSystem"] = None,
+        contradiction_resolver: Optional["ContradictionResolver"] = None,
+        shell_executor: Optional["ShellExecutor"] = None,
+        time_perception: Optional["TimePerception"] = None,
+        social_layer: Optional["SocialLayer"] = None,
+        meta_cognition: Optional["MetaCognition"] = None,
+    ) -> None:
+        # Store all components
+        self._cfg = cfg
+        self._world = world
+        self._values = values
+        self._self_model = self_model
+        self._mem = mem
+        self._milestones = milestones
+        self._log_dir = log_dir
+        self._sandbox_dir = sandbox_dir
+        self._strategy = strategy
+        self._vector_mem = vector_memory
+        self._emotions = emotion_engine
+        self._reflection = reflection_engine
+        self._narrative = narrative_engine
+        self._goal_pers = goal_persistence
+        self._attention = attention_system
+        self._curiosity = curiosity_engine
+        self._self_mod = self_modification
+        self._beliefs = belief_system
+        self._contradictions = contradiction_resolver
+        self._shell_executor = shell_executor
+        self._time_perc = time_perception
+        self._social = social_layer
+        self._meta_cog = meta_cognition
         
-        Args:
-            ollama_client: Ollama LLM client instance
-            config: Configuration dict
-        """
-        self.ollama = ollama_client
-        self.config = config
+        # Initialize Health Monitor
+        self._health_monitor = HealthMonitor(check_interval=30)
         
-        # Initialize fault-tolerance components
-        self.circuit_breaker = CircuitBreaker(
-            name="ollama_llm",
-            failure_threshold=3,
-            timeout=60,
-            success_threshold=2,
+        # Initialize Resilient Ollama Client
+        self._ollama = ResilientOllamaClient(ollama, self._health_monitor)
+        
+        # Initialize Priority Executor
+        self._executor = PriorityExecutor()
+        
+        # Configuration
+        self._interval = cfg["ticks"]["heavy_tick_sec"]
+        self._timeout = int(cfg.get("resources", {}).get("budget", {}).get("tick_timeout_sec", 120))
+        self._tick_count = 0
+        self._running = False
+        self._resume_incremented = False
+        
+        _attn_cfg = cfg.get("attention", {})
+        self._attn_top_k = int(_attn_cfg.get("top_k", 5))
+        self._attn_min_score = float(_attn_cfg.get("min_score", 0.4))
+        self._attn_max_chars = int(_attn_cfg.get("max_context_chars", 1500))
+        
+        _cur_cfg = cfg.get("curiosity", {})
+        self._curiosity_enabled = bool(_cur_cfg.get("enabled", True))
+        
+        # Loggers
+        from core.heavy_tick import HeavyTick
+        self._monologue_log = HeavyTick._make_file_logger(
+            "digital_being.monologue", log_dir / "monologue.log"
+        )
+        self._decision_log = HeavyTick._make_file_logger(
+            "digital_being.decisions", log_dir / "decisions.log"
         )
         
-        self.health_monitor = HealthMonitor(
-            check_interval=30,
-            failure_threshold=3,
+        log.info("[FaultTolerantHeavyTick] Initialized with resilience features")
+    
+    async def start(self) -> None:
+        """Start Heavy Tick loop with health monitoring."""
+        self._running = True
+        self._sandbox_dir.mkdir(parents=True, exist_ok=True)
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Start health monitoring
+        await self._health_monitor.start()
+        
+        log.info(
+            f"[FaultTolerantHeavyTick] Started. "
+            f"Interval: {self._interval}s, max timeout: {self._timeout}s"
         )
+        log.info(f"[FaultTolerantHeavyTick] Adaptive timeouts: {STEP_TIMEOUTS}")
         
-        self.fallback_cache = FallbackCache(default_ttl=300)
-        self.fallback_strategy = FallbackStrategy(self.fallback_cache)
-        
-        self.budget_system = PriorityBudgetSystem()
-        
-        # Register health check for Ollama
-        self.health_monitor.register(
-            "ollama",
-            self._check_ollama_health,
-            latency_threshold=10.0,
-        )
-        
-        # Register defaults for critical components
-        self._register_defaults()
-        
-        # Health monitoring listener
-        self.health_monitor.add_listener(self._on_health_change)
-        
-        logger.info("[FaultTolerantHeavyTick] Initialized")
-    
-    def _register_defaults(self):
-        """Register default fallback values."""
-        self.fallback_cache.set_default(
-            "monologue",
-            "Размышляю о текущей ситуации..."
-        )
-        self.fallback_cache.set_default(
-            "goal",
-            {"goal": "wait", "reason": "Fallback goal - system degraded"}
-        )
-        self.fallback_cache.set_default(
-            "action",
-            {"action": "observe", "target": None}
-        )
-    
-    async def _check_ollama_health(self) -> bool:
-        """Health check for Ollama service."""
-        try:
-            # Simple test chat
-            response = await self.circuit_breaker.call(
-                self.ollama.chat,
-                model=self.config.get('model', 'llama3.2:3b'),
-                messages=[{"role": "user", "content": "test"}],
-            )
-            return response is not None
-        except:
-            return False
-    
-    def _on_health_change(self, service_name: str, status):
-        """Handle health status changes."""
-        if not status.healthy:
-            logger.warning(
-                f"[FaultTolerantHeavyTick] Service '{service_name}' "
-                f"unhealthy - entering degraded mode"
-            )
-        else:
-            logger.info(
-                f"[FaultTolerantHeavyTick] Service '{service_name}' "
-                f"recovered - exiting degraded mode"
-            )
-    
-    async def start(self):
-        """Start health monitoring."""
-        await self.health_monitor.start()
-        logger.info("[FaultTolerantHeavyTick] Started")
-    
-    async def stop(self):
-        """Stop health monitoring."""
-        await self.health_monitor.stop()
-        logger.info("[FaultTolerantHeavyTick] Stopped")
-    
-    async def execute_heavy_tick(self, tick_number: int, context: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute fault-tolerant Heavy Tick.
-        
-        Args:
-            tick_number: Current tick number
-            context: System context and state
+        while self._running:
+            tick_start = time.monotonic()
+            self._tick_count += 1
             
-        Returns:
-            Dict with results from all steps
-        """
-        logger.info(f"[HeavyTick #{tick_number}] Starting fault-tolerant execution")
-        
-        # Reset budget for new cycle
-        self.budget_system.reset_cycle()
-        
-        start_time = time.time()
-        results = {
-            "tick_number": tick_number,
-            "critical_steps": {},
-            "optional_steps": {},
-            "errors": [],
-        }
-        
-        try:
-            # === PHASE 1: Critical Sequential Steps ===
+            # Check system health
+            system_status = self._health_monitor.get_system_status()
+            mode = system_status["mode"]
             
-            # Step 1: Monologue (CRITICAL)
-            monologue_result = await self._execute_critical_step(
-                name="monologue",
-                func=self._generate_monologue,
-                args=(tick_number, context),
-                priority=Priority.CRITICAL,
-                llm_calls=1,
-                timeout=30,
-            )
-            results["critical_steps"]["monologue"] = monologue_result
-            
-            # Step 2: Goal Selection (CRITICAL)
-            goal_result = await self._execute_critical_step(
-                name="goal",
-                func=self._select_goal,
-                args=(tick_number, monologue_result, context),
-                priority=Priority.CRITICAL,
-                llm_calls=3,  # Multiple LLM calls
-                timeout=90,   # Longest timeout
-            )
-            results["critical_steps"]["goal"] = goal_result
-            
-            # Step 3: Action (CRITICAL)
-            action_result = await self._execute_critical_step(
-                name="action",
-                func=self._execute_action,
-                args=(tick_number, goal_result, context),
-                priority=Priority.CRITICAL,
-                llm_calls=2,
-                timeout=45,
-            )
-            results["critical_steps"]["action"] = action_result
-            
-            # === PHASE 2: Optional Parallel Steps ===
-            
-            logger.info(f"[HeavyTick #{tick_number}] Starting parallel optional steps")
-            
-            optional_tasks = []
-            
-            # Curiosity (OPTIONAL)
-            if self.budget_system.can_execute(Priority.OPTIONAL, llm_calls=1):
-                optional_tasks.append(
-                    self._execute_optional_step(
-                        name="curiosity",
-                        func=self._generate_curiosity,
-                        args=(tick_number, context),
-                        priority=Priority.OPTIONAL,
-                        llm_calls=1,
-                        timeout=30,
-                    )
+            if mode == SystemMode.EMERGENCY.value:
+                log.error(
+                    f"[HeavyTick #{self._tick_count}] System in EMERGENCY mode, "
+                    "skipping tick"
                 )
-            else:
-                self.budget_system.record_skip(Priority.OPTIONAL, "Budget exhausted")
+                await asyncio.sleep(self._interval)
+                continue
             
-            # Beliefs (IMPORTANT)
-            if self.budget_system.can_execute(Priority.IMPORTANT, llm_calls=1):
-                optional_tasks.append(
-                    self._execute_optional_step(
-                        name="beliefs",
-                        func=self._update_beliefs,
-                        args=(tick_number, context),
-                        priority=Priority.IMPORTANT,
-                        llm_calls=1,
-                        timeout=30,
-                    )
+            # Check if Ollama is available
+            if not self._ollama.is_available():
+                log.warning(
+                    f"[HeavyTick #{self._tick_count}] Ollama unavailable "
+                    "(circuit breaker OPEN), skipping tick"
                 )
+                await asyncio.sleep(self._interval)
+                continue
             
-            # Social (OPTIONAL)
-            if self.budget_system.can_execute(Priority.OPTIONAL, llm_calls=1):
-                optional_tasks.append(
-                    self._execute_optional_step(
-                        name="social",
-                        func=self._social_interaction,
-                        args=(tick_number, context),
-                        priority=Priority.OPTIONAL,
-                        llm_calls=1,
-                        timeout=25,
-                    )
+            # Run tick
+            try:
+                await asyncio.wait_for(
+                    self._run_tick(),
+                    timeout=self._timeout
                 )
-            
-            # Meta-Cognition (OPTIONAL)
-            if self.budget_system.can_execute(Priority.OPTIONAL, llm_calls=1):
-                optional_tasks.append(
-                    self._execute_optional_step(
-                        name="meta_cognition",
-                        func=self._meta_cognition,
-                        args=(tick_number, context),
-                        priority=Priority.OPTIONAL,
-                        llm_calls=1,
-                        timeout=25,
-                    )
+            except asyncio.TimeoutError:
+                log.error(
+                    f"[HeavyTick #{self._tick_count}] "
+                    f"Total timeout ({self._timeout}s) exceeded"
                 )
-            
-            # Execute all optional tasks in parallel
-            if optional_tasks:
-                optional_results = await asyncio.gather(
-                    *optional_tasks,
-                    return_exceptions=True
+                self._mem.add_episode(
+                    "heavy_tick.timeout",
+                    f"Heavy tick #{self._tick_count} exceeded {self._timeout}s timeout",
+                    outcome="error",
                 )
-                
-                # Process results
-                for result in optional_results:
-                    if isinstance(result, dict) and "name" in result:
-                        results["optional_steps"][result["name"]] = result["result"]
-                    elif isinstance(result, Exception):
-                        results["errors"].append(str(result))
+                self._values.update_after_action(success=False)
+                await self._values._publish_changed()
+                self._update_emotions("heavy_tick.timeout", "failure")
+            except Exception as e:
+                log.error(f"[HeavyTick #{self._tick_count}] Unexpected error: {e}")
             
-            # === PHASE 3: Cleanup and Summary ===
+            # Reset budgets for next tick
+            self._executor.reset_budgets()
             
-            duration = time.time() - start_time
-            results["duration"] = duration
-            results["status"] = "success"
-            
-            # Log budget summary
-            self.budget_system.log_summary()
-            
-            # Cleanup expired cache entries
-            self.fallback_cache.cleanup_expired()
-            
-            logger.info(
-                f"[HeavyTick #{tick_number}] Completed in {duration:.1f}s "
-                f"(critical: {len(results['critical_steps'])}, "
-                f"optional: {len(results['optional_steps'])}, "
-                f"errors: {len(results['errors'])})"
+            # Sleep until next tick
+            elapsed = time.monotonic() - tick_start
+            await asyncio.sleep(max(0.0, self._interval - elapsed))
+    
+    def stop(self) -> None:
+        """Stop Heavy Tick loop and health monitoring."""
+        self._running = False
+        # Health monitor will be stopped by event loop
+        log.info("[FaultTolerantHeavyTick] Stopped")
+    
+    async def _run_tick(self) -> None:
+        """Execute single Heavy Tick with fault tolerance."""
+        n = self._tick_count
+        log.info(f"[HeavyTick #{n}] Starting (fault-tolerant mode)")
+        
+        # Update time context
+        if self._time_perc is not None:
+            self._time_perc.update_context()
+        
+        # === PHASE 1: Critical Sequential Steps ===
+        
+        # Step 1: Monologue
+        monologue_result = await self._executor.execute_step(
+            step_name="monologue",
+            func=self._step_monologue,
+            priority=STEP_PRIORITIES["monologue"],
+            timeout=STEP_TIMEOUTS["monologue"],
+            fallback=lambda: FallbackGenerators.monologue_fallback({"tick_number": n}),
+            n=n,
+        )
+        
+        if not monologue_result.success:
+            log.error(f"[HeavyTick #{n}] Monologue failed, aborting tick")
+            return
+        
+        monologue = monologue_result.result["text"]
+        ep_id = monologue_result.result.get("ep_id")
+        
+        # Embed monologue
+        await self._embed_and_store(ep_id, "monologue", monologue)
+        
+        # Check if defensive mode
+        mode = self._values.get_mode()
+        if mode == "defensive":
+            log.info(f"[HeavyTick #{n}] Mode=defensive, skipping goal selection")
+            self._mem.add_episode(
+                "heavy_tick.defensive",
+                f"Tick #{n}: defensive mode, only monologue executed",
+                outcome="skipped",
             )
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"[HeavyTick #{tick_number}] Fatal error: {e}")
-            results["status"] = "error"
-            results["error"] = str(e)
-            return results
-    
-    async def _execute_critical_step(
-        self,
-        name: str,
-        func,
-        args: tuple,
-        priority: Priority,
-        llm_calls: int,
-        timeout: int,
-    ) -> Any:
-        """
-        Execute critical step with full fault tolerance.
-        
-        Critical steps ALWAYS execute, even if budget exhausted.
-        Uses fallback cache if execution fails.
-        """
-        logger.info(f"[HeavyTick] STEP: {name} (CRITICAL, timeout={timeout}s)")
-        
-        step_start = time.time()
-        
-        try:
-            # Execute with fallback strategy
-            result = await asyncio.wait_for(
-                self.fallback_strategy.execute(
-                    key=name,
-                    func=func,
-                    args=args,
-                    ttl=300,
-                    use_expired=True,
-                ),
-                timeout=timeout
+            self._decision_log.info(
+                f"TICK #{n} | goal=observe(defensive) | action=none | outcome=skipped"
             )
-            
-            duration = time.time() - step_start
-            self.budget_system.record_usage(priority, llm_calls=llm_calls, duration=duration)
-            
-            logger.info(f"[HeavyTick] Step '{name}' completed in {duration:.1f}s")
-            return result
-            
-        except asyncio.TimeoutError:
-            logger.error(f"[HeavyTick] Step '{name}' TIMEOUT after {timeout}s")
-            # Use fallback
-            fallback = self.fallback_cache.get(name, allow_expired=True)
-            if fallback:
-                logger.warning(f"[HeavyTick] Using cached fallback for '{name}'")
-                return fallback
-            raise
-    
-    async def _execute_optional_step(
-        self,
-        name: str,
-        func,
-        args: tuple,
-        priority: Priority,
-        llm_calls: int,
-        timeout: int,
-    ) -> Dict[str, Any]:
-        """
-        Execute optional step with fault tolerance.
+            return
         
-        Optional steps can fail safely without breaking the system.
-        """
-        logger.debug(f"[HeavyTick] Optional step: {name}")
+        # Step 2: Semantic Context
+        semantic_result = await self._executor.execute_step(
+            step_name="semantic_context",
+            func=self._semantic_context,
+            priority=STEP_PRIORITIES["semantic_context"],
+            timeout=STEP_TIMEOUTS["semantic_context"],
+            fallback=lambda: "",
+            query_text=monologue,
+        )
         
-        step_start = time.time()
+        semantic_ctx = semantic_result.result if semantic_result.success else ""
         
-        try:
-            result = await asyncio.wait_for(
-                func(*args),
-                timeout=timeout
-            )
-            
-            duration = time.time() - step_start
-            self.budget_system.record_usage(priority, llm_calls=llm_calls, duration=duration)
-            
-            return {"name": name, "result": result}
-            
-        except Exception as e:
-            logger.warning(f"[HeavyTick] Optional step '{name}' failed: {e}")
-            self.budget_system.record_skip(priority, f"Failed: {e}")
-            return {"name": name, "result": None, "error": str(e)}
-    
-    # === Placeholder step implementations ===
-    # These will be replaced with actual implementations from your system
-    
-    async def _generate_monologue(self, tick_number: int, context: dict) -> str:
-        """Generate internal monologue."""
-        # TODO: Implement actual monologue generation
-        return "Monologue placeholder"
-    
-    async def _select_goal(self, tick_number: int, monologue: str, context: dict) -> dict:
-        """Select current goal."""
-        # TODO: Implement actual goal selection
-        return {"goal": "placeholder", "reason": "test"}
-    
-    async def _execute_action(self, tick_number: int, goal: dict, context: dict) -> dict:
-        """Execute action based on goal."""
-        # TODO: Implement actual action execution
-        return {"action": "placeholder"}
-    
-    async def _generate_curiosity(self, tick_number: int, context: dict) -> list:
-        """Generate curiosity questions."""
-        # TODO: Implement actual curiosity generation
-        return []
-    
-    async def _update_beliefs(self, tick_number: int, context: dict) -> dict:
-        """Update belief system."""
-        # TODO: Implement actual belief updates
-        return {}
-    
-    async def _social_interaction(self, tick_number: int, context: dict) -> dict:
-        """Process social interactions."""
-        # TODO: Implement actual social processing
-        return {}
-    
-    async def _meta_cognition(self, tick_number: int, context: dict) -> dict:
-        """Perform meta-cognitive analysis."""
-        # TODO: Implement actual meta-cognition
-        return {}
+        # Step 3: Goal Selection
+        goal_result = await self._executor.execute_step(
+            step_name="goal_selection",
+            func=self._step_goal_selection,
+            priority=STEP_PRIORITIES["goal_selection"],
+            timeout=STEP_TIMEOUTS["goal_selection"],
+            fallback=lambda: FallbackGenerators.goal_selection_fallback({"tick_number": n}),
+            n=n,
+            monologue=monologue,
+            semantic_ctx=semantic_ctx,
+        )
+        
+        if not goal_result.success:
+            log.error(f"[HeavyTick #{n}] Goal selection failed, using fallback")
+        
+        goal_data = goal_result.result
+        
+        if self._goal_pers is not None:
+            self._goal_pers.set_active(goal_data, tick=n)
+        
+        action_type = goal_data.get("action_type", "observe")
+        risk_level = goal_data.get("risk_level", "low")
+        goal_text = goal_data.get("goal", _DEFAULT_GOAL["goal"])
+        
+        # Step 4: Action
+        action_result = await self._executor.execute_step(
+            step_name="action",
+            func=self._dispatch_action,
+            priority=STEP_PRIORITIES["action"],
+            timeout=STEP_TIMEOUTS["action"],
+            fallback=lambda: FallbackGenerators.action_result_fallback(action_type),
+            n=n,
+            action_type=action_type,
+            goal_text=goal_text,
+            goal_data=goal_data,
+            monologue=monologue,
+        )
+        
+        success = action_result.result.get("success", True) if action_result.success else False
+        outcome = action_result.result.get("outcome", "observed") if action_result.success else "action_failed"
+        
+        # Step 5: After Action
+        await self._executor.execute_step(
+            step_name="after_action",
+            func=self._step_after_action,
+            priority=STEP_PRIORITIES["after_action"],
+            timeout=STEP_TIMEOUTS["after_action"],
+            fallback=lambda: {"status": "skipped"},
+            n=n,
+            action_type=action_type,
+            goal_text=goal_text,
+            risk_level=risk_level,
+            mode=mode,
+            success=success,
+            outcome=outcome,
+        )
+        
+        # === PHASE 2: Optional Parallel Steps ===
+        log.info(f"[HeavyTick #{n}] Starting parallel optional steps")
+        
+        optional_tasks = [
+            self._executor.execute_step(
+                step_name="curiosity",
+                func=self._step_curiosity,
+                priority=STEP_PRIORITIES["curiosity"],
+                timeout=STEP_TIMEOUTS["curiosity"],
+                fallback=lambda: FallbackGenerators.curiosity_fallback(),
+                n=n,
+            ),
+            self._executor.execute_step(
+                step_name="self_modification",
+                func=self._step_self_modification,
+                priority=STEP_PRIORITIES["self_modification"],
+                timeout=STEP_TIMEOUTS["self_modification"],
+                fallback=lambda: {"status": "skipped"},
+                n=n,
+            ),
+            self._executor.execute_step(
+                step_name="belief_system",
+                func=self._step_belief_system,
+                priority=STEP_PRIORITIES["belief_system"],
+                timeout=STEP_TIMEOUTS["belief_system"],
+                fallback=lambda: FallbackGenerators.beliefs_fallback(),
+                n=n,
+            ),
+            self._executor.execute_step(
+                step_name="contradiction_resolver",
+                func=self._step_contradiction_resolver,
+                priority=STEP_PRIORITIES["contradiction_resolver"],
+                timeout=STEP_TIMEOUTS["contradiction_resolver"],
+                fallback=lambda: {"status": "skipped"},
+                n=n,
+            ),
+            self._executor.execute_step(
+                step_name="time_perception",
+                func=self._step_time_perception,
+                priority=STEP_PRIORITIES["time_perception"],
+                timeout=STEP_TIMEOUTS["time_perception"],
+                fallback=lambda: {"status": "skipped"},
+                n=n,
+            ),
+            self._executor.execute_step(
+                step_name="social_interaction",
+                func=self._step_social_interaction,
+                priority=STEP_PRIORITIES["social_interaction"],
+                timeout=STEP_TIMEOUTS["social_interaction"],
+                fallback=lambda: FallbackGenerators.social_fallback(),
+                n=n,
+            ),
+            self._executor.execute_step(
+                step_name="meta_cognition",
+                func=self._step_meta_cognition,
+                priority=STEP_PRIORITIES["meta_cognition"],
+                timeout=STEP_TIMEOUTS["meta_cognition"],
+                fallback=lambda: FallbackGenerators.meta_cognition_fallback(),
+                n=n,
+            ),
+        ]
+        
+        # Execute all optional tasks in parallel
+        optional_results = await asyncio.gather(
+            *optional_tasks,
+            return_exceptions=True
+        )
+        
+        # Log results
+        for i, result in enumerate(optional_results):
+            if isinstance(result, Exception):
+                log.warning(f"[HeavyTick #{n}] Optional step #{i} failed: {result}")
+            elif not result.success:
+                log.info(
+                    f"[HeavyTick #{n}] Optional step '{result.step_name}' "
+                    f"{'used fallback' if result.used_fallback else 'failed'}"
+                )
+        
+        # Print stats
+        stats = self._executor.get_stats()
+        log.info(
+            f"[HeavyTick #{n}] Completed. "
+            f"Critical: {stats['critical_executed']}, "
+            f"Important: {stats['important_executed']}, "
+            f"Optional: {stats['optional_executed']}, "
+            f"Fallbacks: {stats['fallbacks_used']}, "
+            f"Skipped: {stats['total_skipped']}"
+        )
+        
+        # Print Ollama stats
+        ollama_stats = self._ollama.get_stats()
+        log.info(
+            f"[HeavyTick #{n}] Ollama: "
+            f"{ollama_stats['successful_calls']}/{ollama_stats['total_calls']} calls, "
+            f"{ollama_stats['success_rate']}% success, "
+            f"{ollama_stats['avg_latency_ms']:.0f}ms avg latency"
+        )
