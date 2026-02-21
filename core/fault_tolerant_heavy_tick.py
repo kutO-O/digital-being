@@ -147,6 +147,13 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         time_perception: Optional["TimePerception"] = None,
         social_layer: Optional["SocialLayer"] = None,
         meta_cognition: Optional["MetaCognition"] = None,
+        # NEW: 8-Layer Cognitive Architecture components
+        goal_oriented = None,
+        tool_registry = None,
+        learning_engine = None,
+        user_model = None,
+        proactive = None,
+        meta_optimizer = None,
     ) -> None:
         # Store all components
         self._cfg = cfg
@@ -172,6 +179,14 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         self._time_perc = time_perception
         self._social = social_layer
         self._meta_cog = meta_cognition
+        
+        # NEW: 8-Layer Architecture components
+        self._goal_oriented = goal_oriented
+        self._tool_registry = tool_registry
+        self._learning_engine = learning_engine
+        self._user_model = user_model
+        self._proactive = proactive
+        self._meta_optimizer = meta_optimizer
         
         # Initialize Health Monitor
         self._health_monitor = HealthMonitor(check_interval=30)
