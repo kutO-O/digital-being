@@ -420,7 +420,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     tool_registry = ToolRegistry()
     initialize_default_tools(tool_registry, allowed_dirs=[ROOT_DIR / "sandbox", ROOT_DIR / "data"])
     tool_stats = tool_registry.get_statistics()
-    logger.info(f"🛠️  ToolRegistry ready. tools={tool_stats['total_tools']} available={tool_stats['available_tools']}")
+    logger.info(f"🛠️  ToolRegistry ready. tools={tool_stats['total_tools']} executions={tool_stats.get('total_executions', 0)}")
     
     # Layer 3: Continuous Learning
     learning_engine = LearningEngine(
@@ -590,7 +590,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         meta_stats = meta_cog.get_stats()
         logger.info(f"  MetaCog      : insights={meta_stats['total_insights']} calibration={meta_stats['calibration_score']:.2f}")
     # NEW architecture stats
-    logger.info(f"  🛠️  Tools       : {tool_stats['total_tools']} available")
+    logger.info(f"  🛠️  Tools       : {tool_stats['total_tools']} registered")
     logger.info(f"  🧠 Learning    : {learning_stats.get('total_patterns', 0)} patterns")
     if consolidator:
         logger.info(f"  💤 Consolidatn : {'enabled' if consolidation_enabled else 'disabled'}")
