@@ -1,4 +1,26 @@
-"""Fault-Tolerant HeavyTick with Circuit Breaker, Health Monitoring, and Graceful Degradation."""
+"""Fault-Tolerant HeavyTick with Circuit Breaker, Health Monitoring, and Graceful Degradation.
+
+This is the main orchestrator that integrates:
+- CircuitBreaker for LLM call protection
+- HealthMonitor for system health tracking
+- PriorityExecutor for priority-based execution
+- Graceful degradation with fallback strategies
+- Parallel execution of optional steps
+
+Usage:
+    Replace HeavyTick with FaultTolerantHeavyTick in main.py:
+    
+    from core.fault_tolerant_heavy_tick import FaultTolerantHeavyTick
+    
+    heavy_tick = FaultTolerantHeavyTick(
+        cfg=config,
+        ollama=ollama_client,
+        world=world_model,
+        # ... all other components
+    )
+    
+    await heavy_tick.start()
+"""
 
 from __future__ import annotations
 
@@ -6,13 +28,17 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Dict, Any
+from typing import TYPE_CHECKING, Optional
 
 from core.circuit_breaker import CircuitBreaker
 from core.health_monitor import HealthMonitor, SystemMode
 from core.priority_system import PriorityExecutor, Priority
 from core.fallback_generators import FallbackGenerators
 from core.resilient_ollama import ResilientOllamaClient
+
+# Import implementation mixins
+from core.fault_tolerant_heavy_tick_impl import FaultTolerantHeavyTickImpl
+from core.fault_tolerant_heavy_tick_steps import FaultTolerantHeavyTickSteps
 
 if TYPE_CHECKING:
     from core.attention_system import AttentionSystem
@@ -79,7 +105,7 @@ _DEFAULT_GOAL: dict = {
 }
 
 
-class FaultTolerantHeavyTick:
+class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickSteps):
     """
     Fault-tolerant Heavy Tick execution with:
     - Circuit Breaker protection for LLM calls
@@ -88,6 +114,11 @@ class FaultTolerantHeavyTick:
     - Graceful degradation on failures
     - Automatic fallback with result caching
     - Parallel execution of optional steps
+    
+    Architecture:
+    - FaultTolerantHeavyTickImpl: Core step implementations (monologue, goal, actions)
+    - FaultTolerantHeavyTickSteps: Optional step implementations (curiosity, beliefs, etc.)
+    - This class: Main orchestration and lifecycle management
     """
     
     def __init__(
