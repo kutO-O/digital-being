@@ -1,0 +1,273 @@
+"""
+Multi-Agent Communication Demo
+Demonstrates 3 specialized agents working together.
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core.multi_agent_coordinator import MultiAgentCoordinator
+from core.skill_library import SkillLibrary
+from core.ollama_client import OllamaClient
+from core.message_protocol import Priority
+
+
+# Minimal config for Ollama
+OLLAMA_CONFIG = {
+    "ollama": {
+        "strategy_model": "llama3.2:3b",
+        "embed_model": "nomic-embed-text",
+        "host": "http://127.0.0.1:11434"
+    }
+}
+
+# SHARED storage for all agents
+SHARED_STORAGE = Path("memory/multi_agent_demo")
+SHARED_REGISTRY = SHARED_STORAGE / "shared_registry.json"
+SHARED_MESSAGES = SHARED_STORAGE / "shared_messages"
+
+
+async def run_alice(ollama: OllamaClient):
+    """Alice - Research agent."""
+    print("\n[Alice] Starting research agent...")
+    
+    # Agent-specific storage
+    agent_dir = SHARED_STORAGE / "agents" / "alice"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize components
+    skill_lib = SkillLibrary(
+        memory_dir=agent_dir / "skills",
+        ollama=ollama
+    )
+    skill_lib.load()
+    
+    config = {
+        "auto_register": True,
+        "network": {"host": "localhost", "port": 9000},
+        "shared_registry_path": str(SHARED_REGISTRY),
+        "shared_message_storage": str(SHARED_MESSAGES)
+    }
+    
+    coordinator = MultiAgentCoordinator(
+        agent_id="alice_001",
+        agent_name="Alice",
+        specialization="research",
+        skill_library=skill_lib,
+        config=config,
+        storage_dir=agent_dir
+    )
+    
+    # Wait for other agents to register
+    print("[Alice] Waiting for other agents to join...")
+    await asyncio.sleep(3)
+    
+    # Check online agents
+    agents = coordinator.get_online_agents()
+    print(f"[Alice] Found {len(agents)} agents online:")
+    for agent in agents:
+        print(f"  - {agent.name} ({agent.specialization})")
+    
+    # Send query to Bob
+    print("\n[Alice] Asking Bob about web frameworks...")
+    
+    # Start background polling task
+    async def poll_messages():
+        for _ in range(15):
+            await coordinator.process_messages()
+            await asyncio.sleep(0.5)
+    
+    poll_task = asyncio.create_task(poll_messages())
+    
+    answer = await coordinator.send_query_and_wait(
+        to_agent="bob_001",
+        question="What's the best Python web framework for REST APIs?",
+        context={"requirements": ["fast", "async", "modern"]},
+        timeout=8.0
+    )
+    print(f"[Alice] Bob's answer: {answer}")
+    
+    # Delegate task to Bob
+    print("\n[Alice] Delegating coding task to Bob...")
+    task_id = coordinator.delegate_task(
+        task="Create a /health endpoint using FastAPI",
+        context={
+            "type": "coding",
+            "framework": "FastAPI",
+            "requirements": ["return status", "include timestamp"]
+        },
+        priority=Priority.HIGH
+    )
+    print(f"[Alice] Task delegated: {task_id[:8]}")
+    
+    # Wait a bit for task processing
+    await asyncio.sleep(2)
+    
+    # Request consensus
+    print("\n[Alice] Requesting consensus on database choice...")
+    result = await coordinator.request_consensus(
+        question="Which database should we use?",
+        options=["PostgreSQL", "MongoDB", "SQLite"],
+        timeout=8
+    )
+    print(f"[Alice] Consensus reached: {result}")
+    
+    # Broadcast announcement
+    print("\n[Alice] Broadcasting project update...")
+    coordinator.broadcast(
+        announcement="Project phase 1 completed!",
+        data={"completed_tasks": 5, "next_phase": "testing"}
+    )
+    
+    # Wait for poll task
+    await poll_task
+    
+    print("\n[Alice] Demo complete!")
+    print(f"[Alice] Stats: {coordinator.get_stats()}")
+
+
+async def run_bob(ollama: OllamaClient):
+    """Bob - Coding agent."""
+    print("\n[Bob] Starting coding agent...")
+    
+    agent_dir = SHARED_STORAGE / "agents" / "bob"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    
+    skill_lib = SkillLibrary(
+        memory_dir=agent_dir / "skills",
+        ollama=ollama
+    )
+    skill_lib.load()
+    
+    # Add a coding skill
+    skill_lib._skills.append({
+        "id": "fastapi_endpoint",
+        "name": "FastAPI endpoint creation",
+        "action_type": "code",
+        "description": "Create REST API endpoints using FastAPI",
+        "confidence": 0.9,
+        "use_count": 10,
+        "success_count": 9
+    })
+    skill_lib._save()
+    
+    config = {
+        "auto_register": True,
+        "network": {"host": "localhost", "port": 9001},
+        "shared_registry_path": str(SHARED_REGISTRY),
+        "shared_message_storage": str(SHARED_MESSAGES)
+    }
+    
+    coordinator = MultiAgentCoordinator(
+        agent_id="bob_001",
+        agent_name="Bob",
+        specialization="coding",
+        skill_library=skill_lib,
+        config=config,
+        storage_dir=agent_dir
+    )
+    
+    # Share skill with all agents
+    print("[Bob] Sharing FastAPI skill with network...")
+    coordinator.share_skill(skill_id="fastapi_endpoint", to_agent="*")
+    
+    # Process messages
+    print("[Bob] Processing incoming messages...")
+    for i in range(30):
+        count = await coordinator.process_messages()
+        if count > 0:
+            print(f"[Bob] Processed {count} messages at tick {i}")
+        coordinator.send_heartbeat(current_load=0.4)
+        await asyncio.sleep(0.5)
+    
+    print("\n[Bob] Demo complete!")
+    print(f"[Bob] Stats: {coordinator.get_stats()}")
+
+
+async def run_charlie(ollama: OllamaClient):
+    """Charlie - Testing agent."""
+    print("\n[Charlie] Starting testing agent...")
+    
+    agent_dir = SHARED_STORAGE / "agents" / "charlie"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    
+    skill_lib = SkillLibrary(
+        memory_dir=agent_dir / "skills",
+        ollama=ollama
+    )
+    skill_lib.load()
+    
+    config = {
+        "auto_register": True,
+        "network": {"host": "localhost", "port": 9002},
+        "shared_registry_path": str(SHARED_REGISTRY),
+        "shared_message_storage": str(SHARED_MESSAGES)
+    }
+    
+    coordinator = MultiAgentCoordinator(
+        agent_id="charlie_001",
+        agent_name="Charlie",
+        specialization="testing",
+        skill_library=skill_lib,
+        config=config,
+        storage_dir=agent_dir
+    )
+    
+    # Process messages and participate in consensus
+    print("[Charlie] Processing messages and voting...")
+    for i in range(30):
+        count = await coordinator.process_messages()
+        if count > 0:
+            print(f"[Charlie] Processed {count} messages at tick {i}")
+        coordinator.send_heartbeat(current_load=0.2)
+        await asyncio.sleep(0.5)
+    
+    print("\n[Charlie] Demo complete!")
+    print(f"[Charlie] Stats: {coordinator.get_stats()}")
+
+
+async def main():
+    """Run multi-agent demo."""
+    SHARED_STORAGE.mkdir(parents=True, exist_ok=True)
+    
+    # Clean up old shared files
+    if SHARED_REGISTRY.exists():
+        SHARED_REGISTRY.unlink()
+    if SHARED_MESSAGES.exists():
+        import shutil
+        shutil.rmtree(SHARED_MESSAGES)
+    
+    print("\n" + "="*60)
+    print("  Multi-Agent Communication Demo")
+    print("  3 Specialized Agents: Alice, Bob, Charlie")
+    print("="*60)
+    
+    # Initialize shared Ollama client (using same pattern as main.py)
+    ollama = OllamaClient(OLLAMA_CONFIG)
+    
+    # Check if Ollama is available
+    if not ollama.is_available():
+        print("\n❌ Ollama is not available. Please start Ollama service.")
+        print("   Run: ollama serve")
+        return
+    
+    print("✅ Ollama connected\n")
+    
+    # Run all agents concurrently
+    await asyncio.gather(
+        run_alice(ollama),
+        run_bob(ollama),
+        run_charlie(ollama)
+    )
+    
+    print("\n" + "="*60)
+    print("  Demo Complete!")
+    print("="*60)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
