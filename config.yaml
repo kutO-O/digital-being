@@ -24,7 +24,7 @@ ollama:
   base_url: "http://127.0.0.1:11434"
   strategy_model: "llama3.2:3b"
   embed_model: "nomic-embed-text"
-  timeout_sec: 30
+  timeout_sec: 60  # Increased from 30 to prevent timeouts
   max_calls_per_tick: 10
 
 scores:
@@ -62,7 +62,7 @@ strategy:
 
 resources:
   budget:
-    tick_timeout_sec: 30
+    tick_timeout_sec: 120  # Increased from 30 to allow complex ticks to complete
 
 api:
   enabled: true
