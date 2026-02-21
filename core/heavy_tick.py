@@ -1,6 +1,6 @@
 """
 Digital Being — HeavyTick
-Stage 23: SocialLayer integration for async user communication.
+Stage 24: MetaCognition integration.
 
 Note: TimePerception hour_of_day parsing only uses HH:00 from "14:00-15:00" format.
 Minutes are intentionally ignored as a reasonable simplification for current version.
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from core.value_engine import ValueEngine
     from core.world_model import WorldModel
     from core.meta_cognition import MetaCognition
-    
+
 log = logging.getLogger("digital_being.heavy_tick")
 
 WEEKLY_CLEANUP_TICKS = 1008
@@ -76,7 +76,7 @@ class HeavyTick:
         shell_executor:    "ShellExecutor | None"    = None,
         time_perception:   "TimePerception | None"   = None,
         social_layer:      "SocialLayer | None"      = None,  # Stage 23
-        meta_cognition: "MetaCognition | None" = None,
+        meta_cognition:    "MetaCognition | None"    = None,  # Stage 24
     ) -> None:
         self._cfg          = cfg
         self._ollama       = ollama
@@ -100,9 +100,9 @@ class HeavyTick:
         self._contradictions = contradiction_resolver
         self._shell_executor = shell_executor
         self._time_perc    = time_perception
-        self._social       = social_layer  # Stage 23
-        self._meta_cog = meta_cognition  # Stage 24
-        
+        self._social       = social_layer   # Stage 23
+        self._meta_cog     = meta_cognition  # Stage 24
+
         self._interval    = cfg["ticks"]["heavy_tick_sec"]
         self._timeout     = int(cfg.get("resources", {}).get("budget", {}).get("tick_timeout_sec", 30))
         self._tick_count  = 0
@@ -118,8 +118,11 @@ class HeavyTick:
         self._curiosity_enabled = bool(_cur_cfg.get("enabled", True))
 
         self._monologue_log = self._make_file_logger("digital_being.monologue", log_dir / "monologue.log")
-        self._decision_log = self._make_file_logger("digital_being.decisions", log_dir / "decisions.log")
+        self._decision_log  = self._make_file_logger("digital_being.decisions", log_dir / "decisions.log")
 
+    # ────────────────────────────────────────────────────────────────
+    # Lifecycle
+    # ────────────────────────────────────────────────────────────────
     async def start(self) -> None:
         self._running = True
         self._sandbox_dir.mkdir(parents=True, exist_ok=True)
@@ -139,7 +142,11 @@ class HeavyTick:
                 await asyncio.wait_for(self._run_tick(), timeout=self._timeout)
             except asyncio.TimeoutError:
                 log.error(f"[HeavyTick #{self._tick_count}] Timeout ({self._timeout}s) exceeded.")
-                self._mem.add_episode("heavy_tick.timeout", f"Heavy tick #{self._tick_count} exceeded {self._timeout}s timeout", outcome="error")
+                self._mem.add_episode(
+                    "heavy_tick.timeout",
+                    f"Heavy tick #{self._tick_count} exceeded {self._timeout}s timeout",
+                    outcome="error",
+                )
                 self._values.update_after_action(success=False)
                 await self._values._publish_changed()
                 self._update_emotions("heavy_tick.timeout", "failure")
@@ -151,6 +158,9 @@ class HeavyTick:
         self._running = False
         log.info("HeavyTick stopped.")
 
+    # ────────────────────────────────────────────────────────────────
+    # Main tick
+    # ────────────────────────────────────────────────────────────────
     async def _run_tick(self) -> None:
         n = self._tick_count
         log.info(f"[HeavyTick #{n}] Starting.")
@@ -162,20 +172,15 @@ class HeavyTick:
 
         monologue, ep_id = await self._step_monologue(n)
         await self._embed_and_store(ep_id, "monologue", monologue)
-                # Add temporal context
-        if self._time_perc:
-            time_ctx = self._time_perc.to_prompt_context(3)
-            prompt += f"\n{time_ctx}\n"
-        
-        # Add meta-cognitive awareness
-        if self._meta_cog:
-            meta_ctx = self._meta_cog.to_prompt_context(2)
-            prompt += f"\n{meta_ctx}\n"
 
         mode = self._values.get_mode()
         if mode == "defensive":
             log.info(f"[HeavyTick #{n}] Mode=defensive — skipping goal selection.")
-            self._mem.add_episode("heavy_tick.defensive", f"Tick #{n}: defensive mode, only monologue executed.", outcome="skipped")
+            self._mem.add_episode(
+                "heavy_tick.defensive",
+                f"Tick #{n}: defensive mode, only monologue executed.",
+                outcome="skipped",
+            )
             self._decision_log.info(f"TICK #{n} | goal=observe(defensive) | action=none | outcome=skipped")
             return
 
@@ -213,159 +218,9 @@ class HeavyTick:
         await self._step_self_modification(n)
         await self._step_belief_system(n)
         await self._step_contradiction_resolver(n)
-        await self._step_time_perception(n)
-        await self._step_social_interaction(n)  # Stage 23
-        await self._step_meta_cognition(n)  # Stage 24
-
-    # ────────────────────────────────────────────────────────────────
-    # Stage 23: Social Interaction
-    # ────────────────────────────────────────────────────────────────
-    # ────────────────────────────────────────────────────────────────
-# Stage 24: Meta-Cognition
-# ────────────────────────────────────────────────────────────────
-async def _step_meta_cognition(self, n: int) -> None:
-    """Stage 24: Analyze decision quality and discover cognitive patterns."""
-    if self._meta_cog is None:
-        return
-    
-    loop = asyncio.get_event_loop()
-    
-    # Periodic analysis
-    if self._meta_cog.should_analyze(n):
-        log.info(f"[HeavyTick #{n}] MetaCognition: analyzing decision quality.")
-        try:
-            episodes = self._mem.get_recent_episodes(20)
-            quality = await loop.run_in_executor(
-                None, lambda: self._meta_cog.analyze_decision_quality(episodes, self._ollama)
-            )
-            
-            if quality:
-                log.info(
-                    f"[HeavyTick #{n}] MetaCognition: "
-                    f"reasoning={quality.get('reasoning_quality', 0):.2f}, "
-                    f"confusion={quality.get('confusion_level', 0):.2f}"
-                )
-                
-                # Detect cognitive patterns
-                beliefs = self._beliefs.get_beliefs() if self._beliefs else []
-                insights = await loop.run_in_executor(
-                    None,
-                    lambda: self._meta_cog.detect_cognitive_patterns(
-                        episodes, beliefs, self._ollama
-                    )
-                )
-                
-                for ins in insights[:2]:
-                    self._meta_cog.add_insight(
-                        ins["insight_type"],
-                        ins["description"],
-                        [],  # evidence episode IDs can be added later
-                        ins.get("confidence", 0.5),
-                        ins.get("impact", "medium")
-                    )
-                
-                if insights:
-                    log.info(f"[HeavyTick #{n}] MetaCognition: {len(insights)} insight(s) discovered.")
-        
-        except Exception as e:
-            log.error(f"[HeavyTick #{n}] MetaCognition error: {e}")
-        
-        loop = asyncio.get_event_loop()
-        
-        # Check for incoming messages
-        new_messages = await loop.run_in_executor(None, self._social.check_inbox)
-        
-        if new_messages:
-            for msg in new_messages:
-                # Update tick in message
-                msg["tick"] = n
-                
-                # Add to memory
-                self._mem.add_episode(
-                    "social.incoming",
-                    f"Пользователь написал: {msg['content'][:200]}",
-                    outcome="success",
-                    data={"message_id": msg["id"]}
-                )
-                
-                # Generate response
-                context = self._build_social_context()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: self._social.generate_response(msg, context, self._ollama)
-                )
-                
-                if response:
-                    # Send response
-                    outgoing = self._social.add_outgoing(response, n, response_to=msg["id"])
-                    await loop.run_in_executor(None, lambda: self._social.write_to_outbox(response))
-                    self._social.mark_responded(msg["id"])
-                    
-                    self._mem.add_episode(
-                        "social.outgoing",
-                        f"Ответил пользователю: {response[:200]}",
-                        outcome="success"
-                    )
-                    
-                    log.info(f"[HeavyTick #{n}] SocialLayer: responded to user message.")
-                else:
-                    # LLM unavailable
-                    self._mem.add_episode(
-                        "social.llm_unavailable",
-                        "Не удалось сгенерировать ответ — LLM недоступен",
-                        outcome="error"
-                    )
-                    log.warning(f"[HeavyTick #{n}] SocialLayer: failed to generate response (LLM unavailable).")
-        
-        # Check if should initiate conversation
-        should_write, reason = await loop.run_in_executor(
-            None,
-            lambda: self._social.should_initiate(
-                n, self._mem, self._emotions, self._curiosity
-            )
-        )
-        
-        if should_write:
-            context = self._build_social_context()
-            message = await loop.run_in_executor(
-                None,
-                lambda: self._social.generate_initiative(reason, context, self._ollama)
-            )
-            
-            if message:
-                outgoing = self._social.add_outgoing(message, n)
-                await loop.run_in_executor(None, lambda: self._social.write_to_outbox(message))
-                
-                self._mem.add_episode(
-                    "social.initiative",
-                    f"Написал пользователю (reason={reason}): {message[:200]}",
-                    outcome="success"
-                )
-                
-                log.info(f"[HeavyTick #{n}] SocialLayer: initiated conversation (reason={reason}).")
-            else:
-                log.warning(f"[HeavyTick #{n}] SocialLayer: failed to generate initiative message.")
-
-    def _build_social_context(self) -> str:
-        """Построить контекст для social interaction."""
-        parts = [
-            self._self_model.to_prompt_context(),
-            self._values.to_prompt_context(),
-        ]
-        
-        if self._emotions:
-            parts.append(self._emotions.to_prompt_context())
-        
-        if self._beliefs:
-            parts.append(self._beliefs.to_prompt_context(3))
-        
-        if self._time_perc:
-            parts.append(self._time_perc.to_prompt_context(2))
-
-        if self._meta_cog:  # ← ADD THIS
-            parts.append(self._meta_cog.to_prompt_context(2))
-        
-        return "\n".join(parts)
+        await self._step_time_perception(n)       # Stage 22
+        await self._step_social_interaction(n)    # Stage 23
+        await self._step_meta_cognition(n)        # Stage 24
 
     # ────────────────────────────────────────────────────────────────
     # Stage 22: Time Perception
@@ -374,10 +229,9 @@ async def _step_meta_cognition(self, n: int) -> None:
         """Stage 22: Detect temporal patterns periodically."""
         if self._time_perc is None:
             return
-        
+
         loop = asyncio.get_event_loop()
-        
-        # Detect patterns periodically
+
         if self._time_perc.should_detect(n):
             log.info(f"[HeavyTick #{n}] TimePerception: detecting patterns.")
             try:
@@ -385,12 +239,13 @@ async def _step_meta_cognition(self, n: int) -> None:
                 patterns = await loop.run_in_executor(
                     None, lambda: self._time_perc.detect_patterns(episodes, self._ollama)
                 )
-                
-                for p in patterns[:3]:  # max 3 per cycle
+
+                for p in patterns[:3]:
                     self._time_perc.add_pattern(
-                        p["pattern_type"], p["condition"], p["observation"], p.get("confidence", 0.5)
+                        p["pattern_type"], p["condition"],
+                        p["observation"], p.get("confidence", 0.5)
                     )
-                
+
                 if patterns:
                     log.info(f"[HeavyTick #{n}] TimePerception: {len(patterns)} pattern(s) detected.")
             except Exception as e:
@@ -403,54 +258,50 @@ async def _step_meta_cognition(self, n: int) -> None:
         """Stage 23: Check inbox and handle user messages, initiate conversation if needed."""
         if self._social is None:
             return
-        
+
         loop = asyncio.get_event_loop()
-        
+
         # Check for incoming messages
         new_messages = await loop.run_in_executor(None, self._social.check_inbox)
-        
+
         if new_messages:
             for msg in new_messages:
-                # Update tick in message
                 msg["tick"] = n
-                
-                # Add to memory
+
                 self._mem.add_episode(
                     "social.incoming",
                     f"Пользователь написал: {msg['content'][:200]}",
                     outcome="success",
-                    data={"message_id": msg["id"]}
+                    data={"message_id": msg["id"]},
                 )
-                
-                # Generate response
+
                 context = self._build_social_context()
                 response = await loop.run_in_executor(
                     None,
                     lambda m=msg: self._social.generate_response(m, context, self._ollama)
                 )
-                
+
                 if response:
-                    # Send response
-                    outgoing = self._social.add_outgoing(response, n, response_to=msg["id"])
-                    await loop.run_in_executor(None, lambda r=response: self._social.write_to_outbox(r))
+                    self._social.add_outgoing(response, n, response_to=msg["id"])
+                    await loop.run_in_executor(
+                        None, lambda r=response: self._social.write_to_outbox(r)
+                    )
                     self._social.mark_responded(msg["id"])
-                    
+
                     self._mem.add_episode(
                         "social.outgoing",
                         f"Ответил пользователю: {response[:200]}",
-                        outcome="success"
+                        outcome="success",
                     )
-                    
                     log.info(f"[HeavyTick #{n}] SocialLayer: responded to user message.")
                 else:
-                    # LLM unavailable
                     self._mem.add_episode(
                         "social.llm_unavailable",
                         "Не удалось сгенерировать ответ — LLM недоступен",
-                        outcome="error"
+                        outcome="error",
                     )
                     log.warning(f"[HeavyTick #{n}] SocialLayer: failed to generate response (LLM unavailable).")
-        
+
         # Check if should initiate conversation
         should_write, reason = await loop.run_in_executor(
             None,
@@ -458,24 +309,25 @@ async def _step_meta_cognition(self, n: int) -> None:
                 n, self._mem, self._emotions, self._curiosity
             )
         )
-        
+
         if should_write:
             context = self._build_social_context()
             message = await loop.run_in_executor(
                 None,
                 lambda: self._social.generate_initiative(reason, context, self._ollama)
             )
-            
+
             if message:
-                outgoing = self._social.add_outgoing(message, n)
-                await loop.run_in_executor(None, lambda m=message: self._social.write_to_outbox(m))
-                
+                self._social.add_outgoing(message, n)
+                await loop.run_in_executor(
+                    None, lambda m=message: self._social.write_to_outbox(m)
+                )
+
                 self._mem.add_episode(
                     "social.initiative",
                     f"Написал пользователю (reason={reason}): {message[:200]}",
-                    outcome="success"
+                    outcome="success",
                 )
-                
                 log.info(f"[HeavyTick #{n}] SocialLayer: initiated conversation (reason={reason}).")
             else:
                 log.warning(f"[HeavyTick #{n}] SocialLayer: failed to generate initiative message.")
@@ -487,10 +339,9 @@ async def _step_meta_cognition(self, n: int) -> None:
         """Stage 24: Analyze decision quality and discover cognitive patterns."""
         if self._meta_cog is None:
             return
-        
+
         loop = asyncio.get_event_loop()
-        
-        # Periodic analysis
+
         if self._meta_cog.should_analyze(n):
             log.info(f"[HeavyTick #{n}] MetaCognition: analyzing decision quality.")
             try:
@@ -498,15 +349,14 @@ async def _step_meta_cognition(self, n: int) -> None:
                 quality = await loop.run_in_executor(
                     None, lambda: self._meta_cog.analyze_decision_quality(episodes, self._ollama)
                 )
-                
+
                 if quality:
                     log.info(
                         f"[HeavyTick #{n}] MetaCognition: "
                         f"reasoning={quality.get('reasoning_quality', 0):.2f}, "
                         f"confusion={quality.get('confusion_level', 0):.2f}"
                     )
-                    
-                    # Detect cognitive patterns
+
                     beliefs = self._beliefs.get_beliefs() if self._beliefs else []
                     insights = await loop.run_in_executor(
                         None,
@@ -514,42 +364,42 @@ async def _step_meta_cognition(self, n: int) -> None:
                             episodes, beliefs, self._ollama
                         )
                     )
-                    
+
                     for ins in insights[:2]:
                         self._meta_cog.add_insight(
                             ins["insight_type"],
                             ins["description"],
-                            [],  # evidence episode IDs can be added later
+                            [],
                             ins.get("confidence", 0.5),
-                            ins.get("impact", "medium")
+                            ins.get("impact", "medium"),
                         )
-                    
+
                     if insights:
                         log.info(f"[HeavyTick #{n}] MetaCognition: {len(insights)} insight(s) discovered.")
-            
+
             except Exception as e:
                 log.error(f"[HeavyTick #{n}] MetaCognition error: {e}")
 
     # ────────────────────────────────────────────────────────────────
     # Helper: Build Social Context
     # ────────────────────────────────────────────────────────────────
-     def _build_social_context(self) -> str:
+    def _build_social_context(self) -> str:
         """Построить контекст для social interaction."""
         parts = [
             self._self_model.to_prompt_context(),
             self._values.to_prompt_context(),
         ]
-        
+
         if self._emotions:
             parts.append(self._emotions.to_prompt_context())
-        
+
         if self._beliefs:
             parts.append(self._beliefs.to_prompt_context(3))
-        
+
         if self._time_perc:
             parts.append(self._time_perc.to_prompt_context(2))
 
         if self._meta_cog:
             parts.append(self._meta_cog.to_prompt_context(2))
-        
+
         return "\n".join(parts)
