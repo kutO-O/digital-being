@@ -42,6 +42,9 @@ class MessageBroker:
         # Pending replies (msg_id -> future)
         self._pending_replies: dict[str, asyncio.Future] = {}
         
+        # Track processed message IDs to avoid duplicates
+        self._processed_ids: set[str] = set()
+        
         self._load_queue()
         log.info(f"MessageBroker initialized for agent {agent_id}")
     
@@ -66,6 +69,10 @@ class MessageBroker:
     
     def receive(self, message: Message):
         """Receive a message from another agent."""
+        # Skip if already processed
+        if message.msg_id in self._processed_ids:
+            return
+        
         # Check if expired
         if message.is_expired():
             log.warning(f"Dropped expired message: {message.msg_id[:8]}")
@@ -73,6 +80,7 @@ class MessageBroker:
         
         # Add to appropriate queue
         self._queues[message.priority].append(message)
+        self._processed_ids.add(message.msg_id)
         
         # Persist
         self._persist_message(message, "received")
@@ -186,9 +194,56 @@ class MessageBroker:
             with log_file.open("r", encoding="utf-8") as f:
                 for line in f:
                     msg = Message.from_json(line.strip())
-                    if not msg.is_expired():
+                    if not msg.is_expired() and msg.msg_id not in self._processed_ids:
                         self._queues[msg.priority].append(msg)
+                        self._processed_ids.add(msg.msg_id)
             
             log.info(f"Loaded {sum(len(q) for q in self._queues.values())} messages from disk")
         except Exception as e:
             log.error(f"Failed to load queue: {e}")
+    
+    # Shared message delivery methods
+    def _save_to_disk(self):
+        """Save sent messages to shared storage."""
+        if not self._sent:
+            return
+        
+        try:
+            shared_file = self._storage_dir / "shared_outbox.jsonl"
+            with shared_file.open("a", encoding="utf-8") as f:
+                for msg in self._sent.values():
+                    f.write(msg.to_json() + "\n")
+        except Exception as e:
+            log.error(f"Failed to save to shared storage: {e}")
+    
+    def _load_from_disk(self):
+        """Load messages from shared storage."""
+        shared_file = self._storage_dir / "shared_outbox.jsonl"
+        if not shared_file.exists():
+            return
+        
+        try:
+            with shared_file.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    
+                    msg = Message.from_json(line.strip())
+                    
+                    # Skip own messages
+                    if msg.from_agent == self._agent_id:
+                        continue
+                    
+                    # Skip if not for this agent and not broadcast
+                    if msg.to_agent != self._agent_id and msg.to_agent != "*":
+                        continue
+                    
+                    # Skip if already processed
+                    if msg.msg_id in self._processed_ids:
+                        continue
+                    
+                    # Receive the message
+                    self.receive(msg)
+        
+        except Exception as e:
+            log.error(f"Failed to load from shared storage: {e}")
