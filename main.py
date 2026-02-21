@@ -418,7 +418,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     
     # Layer 2: Tool Registry
     tool_registry = ToolRegistry()
-    initialize_default_tools(tool_registry, sandbox_dir=ROOT_DIR / "sandbox")
+    initialize_default_tools(tool_registry, allowed_dirs=[ROOT_DIR / "sandbox", ROOT_DIR / "data"])
     tool_stats = tool_registry.get_statistics()
     logger.info(f"🛠️  ToolRegistry ready. tools={tool_stats['total_tools']} available={tool_stats['available_tools']}")
     
