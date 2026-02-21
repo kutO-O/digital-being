@@ -25,21 +25,29 @@ OLLAMA_CONFIG = {
     }
 }
 
+# SHARED storage for all agents
+SHARED_STORAGE = Path("memory/multi_agent_demo")
 
-async def run_alice(storage_dir: Path, ollama: OllamaClient):
+
+async def run_alice(ollama: OllamaClient):
     """Alice - Research agent."""
     print("\n[Alice] Starting research agent...")
     
+    # Agent-specific storage
+    agent_dir = SHARED_STORAGE / "agents" / "alice"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    
     # Initialize components
     skill_lib = SkillLibrary(
-        memory_dir=storage_dir / "alice" / "skills",
+        memory_dir=agent_dir / "skills",
         ollama=ollama
     )
     skill_lib.load()
     
     config = {
         "auto_register": True,
-        "network": {"host": "localhost", "port": 9000}
+        "network": {"host": "localhost", "port": 9000},
+        "shared_registry_path": str(SHARED_STORAGE / "shared_registry.json")  # SHARED
     }
     
     coordinator = MultiAgentCoordinator(
@@ -48,7 +56,7 @@ async def run_alice(storage_dir: Path, ollama: OllamaClient):
         specialization="research",
         skill_library=skill_lib,
         config=config,
-        storage_dir=storage_dir / "alice"
+        storage_dir=agent_dir
     )
     
     # Wait for other agents to register
@@ -108,12 +116,15 @@ async def run_alice(storage_dir: Path, ollama: OllamaClient):
     print(f"[Alice] Stats: {coordinator.get_stats()}")
 
 
-async def run_bob(storage_dir: Path, ollama: OllamaClient):
+async def run_bob(ollama: OllamaClient):
     """Bob - Coding agent."""
     print("\n[Bob] Starting coding agent...")
     
+    agent_dir = SHARED_STORAGE / "agents" / "bob"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    
     skill_lib = SkillLibrary(
-        memory_dir=storage_dir / "bob" / "skills",
+        memory_dir=agent_dir / "skills",
         ollama=ollama
     )
     skill_lib.load()
@@ -132,7 +143,8 @@ async def run_bob(storage_dir: Path, ollama: OllamaClient):
     
     config = {
         "auto_register": True,
-        "network": {"host": "localhost", "port": 9001}
+        "network": {"host": "localhost", "port": 9001},
+        "shared_registry_path": str(SHARED_STORAGE / "shared_registry.json")  # SHARED
     }
     
     coordinator = MultiAgentCoordinator(
@@ -141,7 +153,7 @@ async def run_bob(storage_dir: Path, ollama: OllamaClient):
         specialization="coding",
         skill_library=skill_lib,
         config=config,
-        storage_dir=storage_dir / "bob"
+        storage_dir=agent_dir
     )
     
     # Share skill with all agents
@@ -161,19 +173,23 @@ async def run_bob(storage_dir: Path, ollama: OllamaClient):
     print(f"[Bob] Stats: {coordinator.get_stats()}")
 
 
-async def run_charlie(storage_dir: Path, ollama: OllamaClient):
+async def run_charlie(ollama: OllamaClient):
     """Charlie - Testing agent."""
     print("\n[Charlie] Starting testing agent...")
     
+    agent_dir = SHARED_STORAGE / "agents" / "charlie"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    
     skill_lib = SkillLibrary(
-        memory_dir=storage_dir / "charlie" / "skills",
+        memory_dir=agent_dir / "skills",
         ollama=ollama
     )
     skill_lib.load()
     
     config = {
         "auto_register": True,
-        "network": {"host": "localhost", "port": 9002}
+        "network": {"host": "localhost", "port": 9002},
+        "shared_registry_path": str(SHARED_STORAGE / "shared_registry.json")  # SHARED
     }
     
     coordinator = MultiAgentCoordinator(
@@ -182,7 +198,7 @@ async def run_charlie(storage_dir: Path, ollama: OllamaClient):
         specialization="testing",
         skill_library=skill_lib,
         config=config,
-        storage_dir=storage_dir / "charlie"
+        storage_dir=agent_dir
     )
     
     # Process messages and participate in consensus
@@ -198,8 +214,7 @@ async def run_charlie(storage_dir: Path, ollama: OllamaClient):
 
 async def main():
     """Run multi-agent demo."""
-    storage_dir = Path("memory/multi_agent_demo")
-    storage_dir.mkdir(parents=True, exist_ok=True)
+    SHARED_STORAGE.mkdir(parents=True, exist_ok=True)
     
     print("\n" + "="*60)
     print("  Multi-Agent Communication Demo")
@@ -219,9 +234,9 @@ async def main():
     
     # Run all agents concurrently
     await asyncio.gather(
-        run_alice(storage_dir, ollama),
-        run_bob(storage_dir, ollama),
-        run_charlie(storage_dir, ollama)
+        run_alice(ollama),
+        run_bob(ollama),
+        run_charlie(ollama)
     )
     
     print("\n" + "="*60)
