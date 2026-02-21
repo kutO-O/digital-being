@@ -54,6 +54,8 @@ _SAFE_GOAL: dict = {
     "risk_level":  "low",
 }
 
+_VALID_ACTION_TYPES = {"observe", "analyze", "write", "reflect"}
+
 
 class StrategyEngine:
 
@@ -187,18 +189,30 @@ class StrategyEngine:
                 f"Текущий режим: {mode}\n"
                 f"Конфликты: exploration_vs_stability={c_expl}, action_vs_caution={c_act}\n"
                 f"{force_note}\n"
-                f"Выбери ONE цель. JSON:\n"
+                f"Выбери ОДНУ цель. Отвечай ТОЛЬКО валидным JSON. Для action_type используй ТОЛЬКО ОДНО слово:\n"
                 f'{{"goal": "...", "reasoning": "...", '
-                f'"action_type": "observe|analyze|write|reflect", '
-                f'"risk_level": "low|medium|high"}}'
+                f'"action_type": "observe", '
+                f'"risk_level": "low"}}\n'
+                f"Допустимые значения action_type: observe, analyze, write, reflect"
             )
             system = (
-                "Ты — Digital Being. Отвечай ТОЛЬКО валидным JSON-объектом."
+                "Ты — Digital Being. Отвечай ТОЛЬКО валидным JSON-объектом. "
+                "Поле action_type должно содержать ровно ОДНО слово без символа '|'."
             )
 
             loop = asyncio.get_event_loop()
             raw  = await loop.run_in_executor(None, lambda: ollama.chat(prompt, system))
             goal = self._parse_goal_json(raw)
+
+            # Sanitize action_type: take first word before any '|', '/', ' '
+            raw_action = goal.get("action_type", "observe")
+            for sep in ("|", "/", " "):
+                raw_action = raw_action.split(sep)[0]
+            raw_action = raw_action.strip().lower()
+            if raw_action not in _VALID_ACTION_TYPES:
+                log.warning(f"select_goal: invalid action_type '{raw_action}' — fallback to 'observe'")
+                raw_action = "observe"
+            goal["action_type"] = raw_action
 
             if forced_type and goal.get("action_type") in ("observe", "write"):
                 log.info(
