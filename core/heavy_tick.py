@@ -42,6 +42,9 @@ log = logging.getLogger("digital_being.heavy_tick")
 
 WEEKLY_CLEANUP_TICKS = 1008
 
+# Timeout (seconds) for each individual step that calls Ollama
+_STEP_TIMEOUT = 20
+
 _DEFAULT_GOAL: dict = {
     "goal":        "наблюдать за средой",
     "reasoning":   "LLM недоступен или не вернул валидный JSON",
@@ -127,7 +130,7 @@ class HeavyTick:
         self._running = True
         self._sandbox_dir.mkdir(parents=True, exist_ok=True)
         self._log_dir.mkdir(parents=True, exist_ok=True)
-        log.info(f"HeavyTick started. Interval: {self._interval}s, timeout: {self._timeout}s")
+        log.info(f"HeavyTick started. Interval: {self._interval}s, timeout: {self._timeout}s, step_timeout: {_STEP_TIMEOUT}s")
 
         while self._running:
             tick_start = time.monotonic()
@@ -184,8 +187,25 @@ class HeavyTick:
             self._decision_log.info(f"TICK #{n} | goal=observe(defensive) | action=none | outcome=skipped")
             return
 
-        semantic_ctx = await self._semantic_context(monologue)
-        goal_data = await self._step_goal_selection(n, monologue, semantic_ctx)
+        # ── Step: semantic context ──────────────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: semantic_context")
+        try:
+            semantic_ctx = await asyncio.wait_for(
+                self._semantic_context(monologue), timeout=_STEP_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP semantic_context TIMEOUT ({_STEP_TIMEOUT}s) — skipping.")
+            semantic_ctx = ""
+
+        # ── Step: goal selection ────────────────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: goal_selection")
+        try:
+            goal_data = await asyncio.wait_for(
+                self._step_goal_selection(n, monologue, semantic_ctx), timeout=_STEP_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP goal_selection TIMEOUT ({_STEP_TIMEOUT}s) — using default.")
+            goal_data = dict(_DEFAULT_GOAL)
 
         if self._goal_pers is not None:
             self._goal_pers.set_active(goal_data, tick=n)
@@ -197,30 +217,96 @@ class HeavyTick:
         success = True
         outcome = "observe"
 
-        if action_type == "observe":
-            outcome = "observed"
-            log.info(f"[HeavyTick #{n}] Action: observe (passive tick).")
-        elif action_type == "analyze":
-            success, outcome = await self._action_analyze(n)
-        elif action_type == "write":
-            success, outcome = await self._action_write(n, monologue, goal_text)
-        elif action_type == "reflect":
-            success, outcome = await self._action_reflect(n)
-        elif action_type == "shell":
-            shell_cmd = goal_data.get("shell_command", "")
-            success, outcome = await self._action_shell(n, shell_cmd)
-        else:
-            log.warning(f"[HeavyTick #{n}] Unknown action_type='{action_type}'.")
-            outcome = "observed"
+        # ── Step: action dispatch ───────────────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: action ({action_type})")
+        try:
+            if action_type == "observe":
+                outcome = "observed"
+                log.info(f"[HeavyTick #{n}] Action: observe (passive tick).")
+            elif action_type == "analyze":
+                success, outcome = await asyncio.wait_for(
+                    self._action_analyze(n), timeout=_STEP_TIMEOUT
+                )
+            elif action_type == "write":
+                success, outcome = await asyncio.wait_for(
+                    self._action_write(n, monologue, goal_text), timeout=_STEP_TIMEOUT
+                )
+            elif action_type == "reflect":
+                success, outcome = await asyncio.wait_for(
+                    self._action_reflect(n), timeout=_STEP_TIMEOUT
+                )
+            elif action_type == "shell":
+                shell_cmd = goal_data.get("shell_command", "")
+                success, outcome = await asyncio.wait_for(
+                    self._action_shell(n, shell_cmd), timeout=_STEP_TIMEOUT
+                )
+            else:
+                log.warning(f"[HeavyTick #{n}] Unknown action_type='{action_type}'.")
+                outcome = "observed"
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP action({action_type}) TIMEOUT ({_STEP_TIMEOUT}s).")
+            success, outcome = False, "action_timeout"
 
-        await self._step_after_action(n, action_type, goal_text, risk_level, mode, success, outcome)
-        await self._step_curiosity(n)
-        await self._step_self_modification(n)
-        await self._step_belief_system(n)
-        await self._step_contradiction_resolver(n)
-        await self._step_time_perception(n)     # Stage 22
-        await self._step_social_interaction(n)  # Stage 23
-        await self._step_meta_cognition(n)      # Stage 24
+        # ── Step: after action ──────────────────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: after_action")
+        try:
+            await asyncio.wait_for(
+                self._step_after_action(n, action_type, goal_text, risk_level, mode, success, outcome),
+                timeout=_STEP_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP after_action TIMEOUT ({_STEP_TIMEOUT}s).")
+
+        # ── Step: curiosity ─────────────────────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: curiosity")
+        try:
+            await asyncio.wait_for(self._step_curiosity(n), timeout=_STEP_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP curiosity TIMEOUT ({_STEP_TIMEOUT}s).")
+
+        # ── Step: self modification ─────────────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: self_modification")
+        try:
+            await asyncio.wait_for(self._step_self_modification(n), timeout=_STEP_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP self_modification TIMEOUT ({_STEP_TIMEOUT}s).")
+
+        # ── Step: belief system ─────────────────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: belief_system")
+        try:
+            await asyncio.wait_for(self._step_belief_system(n), timeout=_STEP_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP belief_system TIMEOUT ({_STEP_TIMEOUT}s).")
+
+        # ── Step: contradiction resolver ────────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: contradiction_resolver")
+        try:
+            await asyncio.wait_for(self._step_contradiction_resolver(n), timeout=_STEP_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP contradiction_resolver TIMEOUT ({_STEP_TIMEOUT}s).")
+
+        # ── Step: time perception (Stage 22) ────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: time_perception")
+        try:
+            await asyncio.wait_for(self._step_time_perception(n), timeout=_STEP_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP time_perception TIMEOUT ({_STEP_TIMEOUT}s).")
+
+        # ── Step: social interaction (Stage 23) ─────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: social_interaction")
+        try:
+            await asyncio.wait_for(self._step_social_interaction(n), timeout=_STEP_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP social_interaction TIMEOUT ({_STEP_TIMEOUT}s).")
+
+        # ── Step: meta cognition (Stage 24) ─────────────────────────
+        log.info(f"[HeavyTick #{n}] STEP: meta_cognition")
+        try:
+            await asyncio.wait_for(self._step_meta_cognition(n), timeout=_STEP_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(f"[HeavyTick #{n}] STEP meta_cognition TIMEOUT ({_STEP_TIMEOUT}s).")
+
+        log.info(f"[HeavyTick #{n}] All steps finished.")
 
     # ────────────────────────────────────────────────────────────────
     # Stage 22: Time Perception
