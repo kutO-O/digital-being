@@ -27,6 +27,8 @@ OLLAMA_CONFIG = {
 
 # SHARED storage for all agents
 SHARED_STORAGE = Path("memory/multi_agent_demo")
+SHARED_REGISTRY = SHARED_STORAGE / "shared_registry.json"
+SHARED_MESSAGES = SHARED_STORAGE / "shared_messages"
 
 
 async def run_alice(ollama: OllamaClient):
@@ -47,7 +49,8 @@ async def run_alice(ollama: OllamaClient):
     config = {
         "auto_register": True,
         "network": {"host": "localhost", "port": 9000},
-        "shared_registry_path": str(SHARED_STORAGE / "shared_registry.json")  # SHARED
+        "shared_registry_path": str(SHARED_REGISTRY),
+        "shared_message_storage": str(SHARED_MESSAGES)
     }
     
     coordinator = MultiAgentCoordinator(
@@ -144,7 +147,8 @@ async def run_bob(ollama: OllamaClient):
     config = {
         "auto_register": True,
         "network": {"host": "localhost", "port": 9001},
-        "shared_registry_path": str(SHARED_STORAGE / "shared_registry.json")  # SHARED
+        "shared_registry_path": str(SHARED_REGISTRY),
+        "shared_message_storage": str(SHARED_MESSAGES)
     }
     
     coordinator = MultiAgentCoordinator(
@@ -189,7 +193,8 @@ async def run_charlie(ollama: OllamaClient):
     config = {
         "auto_register": True,
         "network": {"host": "localhost", "port": 9002},
-        "shared_registry_path": str(SHARED_STORAGE / "shared_registry.json")  # SHARED
+        "shared_registry_path": str(SHARED_REGISTRY),
+        "shared_message_storage": str(SHARED_MESSAGES)
     }
     
     coordinator = MultiAgentCoordinator(
