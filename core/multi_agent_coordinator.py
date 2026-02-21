@@ -51,7 +51,15 @@ class MultiAgentCoordinator:
             registry_path = self._storage_dir / "registry.json"
         
         self._registry = AgentRegistry(registry_path)
-        self._broker = MessageBroker(agent_id, self._storage_dir / "messages")
+        
+        # Use shared message storage if provided
+        message_storage = config.get("shared_message_storage")
+        if message_storage:
+            message_storage = Path(message_storage)
+        else:
+            message_storage = self._storage_dir / "messages"
+        
+        self._broker = MessageBroker(agent_id, message_storage)
         self._skill_exchange = SkillExchange(agent_id, skill_library, self._broker)
         
         # Register self in registry
@@ -104,6 +112,8 @@ class MultiAgentCoordinator:
     
     async def process_messages(self) -> int:
         """Process pending messages."""
+        # Load messages from shared storage first
+        self._broker._load_from_disk()
         return await self._broker.process_messages(batch_size=10)
     
     def send_heartbeat(self, current_load: float = 0.0):
@@ -118,7 +128,9 @@ class MultiAgentCoordinator:
             question=question,
             context=context
         )
-        return self._broker.send(message)
+        msg_id = self._broker.send(message)
+        self._broker._save_to_disk()  # Persist immediately
+        return msg_id
     
     async def send_query_and_wait(
         self,
@@ -162,6 +174,7 @@ class MultiAgentCoordinator:
         )
         
         msg_id = self._broker.send(message)
+        self._broker._save_to_disk()  # Persist immediately
         
         # Track delegated task
         self._delegated_tasks[msg_id] = {
@@ -176,7 +189,10 @@ class MultiAgentCoordinator:
     
     def share_skill(self, skill_id: str, to_agent: str = "*") -> Optional[str]:
         """Share a skill with other agent(s)."""
-        return self._skill_exchange.share_skill(skill_id, to_agent)
+        msg_id = self._skill_exchange.share_skill(skill_id, to_agent)
+        if msg_id:
+            self._broker._save_to_disk()
+        return msg_id
     
     def broadcast(self, announcement: str, data: dict | None = None) -> str:
         """Broadcast message to all agents."""
@@ -185,7 +201,9 @@ class MultiAgentCoordinator:
             announcement=announcement,
             data=data
         )
-        return self._broker.send(message)
+        msg_id = self._broker.send(message)
+        self._broker._save_to_disk()  # Persist immediately
+        return msg_id
     
     async def request_consensus(
         self,
@@ -202,6 +220,7 @@ class MultiAgentCoordinator:
         )
         
         msg_id = self._broker.send(message)
+        self._broker._save_to_disk()  # Persist immediately
         
         # Initialize vote tracking
         self._consensus_votes[msg_id] = {
@@ -268,6 +287,7 @@ class MultiAgentCoordinator:
             success=True
         )
         self._broker.send(response)
+        self._broker._save_to_disk()  # Persist response
     
     def _handle_task(self, message: Message):
         """Handle incoming task delegation."""
@@ -291,6 +311,7 @@ class MultiAgentCoordinator:
             reply_to=message.msg_id
         )
         self._broker.send(status_msg)
+        self._broker._save_to_disk()  # Persist status
     
     def _handle_consensus(self, message: Message):
         """Handle consensus request."""
@@ -313,6 +334,7 @@ class MultiAgentCoordinator:
                 reasoning="Based on current knowledge"
             )
             self._broker.send(vote)
+            self._broker._save_to_disk()  # Persist vote
     
     def _handle_vote(self, message: Message):
         """Handle incoming vote for consensus."""
