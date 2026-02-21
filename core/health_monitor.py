@@ -1,130 +1,88 @@
-"""Health monitoring system for continuous service health checks."""
+"""Health monitoring and auto-recovery system."""
 
 import asyncio
 import time
-from typing import Dict, Callable, Optional, List
-from dataclasses import dataclass
+from typing import Optional, Dict, Any
+from enum import Enum
 import logging
 
-logger = logging.getLogger('digital_being.health_monitor')
+logger = logging.getLogger("digital_being.health_monitor")
 
 
-@dataclass
-class HealthStatus:
-    """Health status for a service."""
-    service_name: str
-    healthy: bool
-    latency_ms: Optional[float]
-    last_check: float
-    consecutive_failures: int
-    error_message: Optional[str] = None
+class SystemMode(Enum):
+    """System operation modes."""
+    NORMAL = "normal"          # All systems operational
+    DEGRADED = "degraded"      # Some systems down, using fallbacks
+    RECOVERY = "recovery"      # Attempting to recover
+    EMERGENCY = "emergency"    # Critical failure, minimal operation
+
+
+class ComponentHealth:
+    """Track health status of a single component."""
+    
+    def __init__(self, name: str):
+        self.name = name
+        self.status = "unknown"
+        self.last_check = None
+        self.latency_ms = None
+        self.error_count = 0
+        self.consecutive_failures = 0
+        self.last_error = None
+    
+    def mark_healthy(self, latency_ms: float):
+        """Mark component as healthy."""
+        self.status = "healthy"
+        self.last_check = time.time()
+        self.latency_ms = latency_ms
+        self.consecutive_failures = 0
+    
+    def mark_unhealthy(self, error: str):
+        """Mark component as unhealthy."""
+        self.status = "unhealthy"
+        self.last_check = time.time()
+        self.error_count += 1
+        self.consecutive_failures += 1
+        self.last_error = error
     
     def to_dict(self) -> dict:
         return {
-            "service": self.service_name,
-            "healthy": self.healthy,
+            "name": self.name,
+            "status": self.status,
             "latency_ms": self.latency_ms,
-            "last_check": self.last_check,
+            "error_count": self.error_count,
             "consecutive_failures": self.consecutive_failures,
-            "error": self.error_message,
+            "last_check": self.last_check,
+            "last_error": self.last_error,
         }
 
 
 class HealthMonitor:
     """
-    Continuous health monitoring for critical services.
+    Monitor system health and trigger auto-recovery.
     
-    Monitors services in background and emits health change events.
-    Detects:
-    - Service unavailability
-    - Degraded performance (high latency)
-    - Intermittent failures
-    
-    Example:
-        monitor = HealthMonitor(check_interval=30)
-        
-        # Register Ollama health check
-        async def check_ollama():
-            response = await ollama.chat("test")
-            return response is not None
-        
-        monitor.register("ollama", check_ollama, latency_threshold=10.0)
-        
-        # Start monitoring
-        await monitor.start()
-        
-        # Get current health
-        if monitor.is_healthy("ollama"):
-            result = await ollama.chat(prompt)
-        else:
-            result = use_cached_response()
+    Responsibilities:
+    - Check health of critical components (Ollama, memory, etc.)
+    - Switch system modes based on component health
+    - Trigger recovery actions
+    - Provide health status for observability
     """
     
-    def __init__(
-        self,
-        check_interval: int = 30,
-        failure_threshold: int = 3,
-    ):
-        """
-        Initialize health monitor.
-        
-        Args:
-            check_interval: Seconds between health checks
-            failure_threshold: Consecutive failures before marking unhealthy
-        """
+    def __init__(self, check_interval: int = 30):
         self.check_interval = check_interval
-        self.failure_threshold = failure_threshold
-        
-        self.services: Dict[str, Callable] = {}
-        self.thresholds: Dict[str, float] = {}
-        self.statuses: Dict[str, HealthStatus] = {}
-        self.listeners: List[Callable] = []
-        
+        self.mode = SystemMode.NORMAL
+        self.components: Dict[str, ComponentHealth] = {}
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._monitor_task: Optional[asyncio.Task] = None
         
-        logger.info(
-            f"[HealthMonitor] Initialized (interval={check_interval}s, "
-            f"threshold={failure_threshold})"
-        )
+        # Thresholds
+        self.unhealthy_threshold = 3  # Consecutive failures before degraded
+        self.latency_warning_ms = 5000  # 5 seconds
+        self.latency_critical_ms = 15000  # 15 seconds
     
-    def register(
-        self,
-        service_name: str,
-        health_check: Callable,
-        latency_threshold: float = 10.0,
-    ):
-        """
-        Register a service for health monitoring.
-        
-        Args:
-            service_name: Unique service identifier
-            health_check: Async function that returns True if healthy
-            latency_threshold: Max acceptable latency in seconds
-        """
-        self.services[service_name] = health_check
-        self.thresholds[service_name] = latency_threshold
-        self.statuses[service_name] = HealthStatus(
-            service_name=service_name,
-            healthy=True,
-            latency_ms=None,
-            last_check=time.time(),
-            consecutive_failures=0,
-        )
-        logger.info(
-            f"[HealthMonitor] Registered service '{service_name}' "
-            f"(latency_threshold={latency_threshold}s)"
-        )
-    
-    def add_listener(self, callback: Callable[[str, HealthStatus], None]):
-        """
-        Add health change event listener.
-        
-        Args:
-            callback: Function called when health status changes
-                      Signature: callback(service_name, new_status)
-        """
-        self.listeners.append(callback)
+    def register_component(self, name: str):
+        """Register a component for health monitoring."""
+        self.components[name] = ComponentHealth(name)
+        logger.info(f"[HealthMonitor] Registered component: {name}")
     
     async def start(self):
         """Start health monitoring loop."""
@@ -133,16 +91,16 @@ class HealthMonitor:
             return
         
         self._running = True
-        self._task = asyncio.create_task(self._monitor_loop())
-        logger.info("[HealthMonitor] Started")
+        self._monitor_task = asyncio.create_task(self._monitor_loop())
+        logger.info(f"[HealthMonitor] Started (interval={self.check_interval}s)")
     
     async def stop(self):
         """Stop health monitoring loop."""
         self._running = False
-        if self._task:
-            self._task.cancel()
+        if self._monitor_task:
+            self._monitor_task.cancel()
             try:
-                await self._task
+                await self._monitor_task
             except asyncio.CancelledError:
                 pass
         logger.info("[HealthMonitor] Stopped")
@@ -151,128 +109,94 @@ class HealthMonitor:
         """Main monitoring loop."""
         while self._running:
             try:
-                # Check all registered services
-                for service_name in self.services:
-                    await self._check_service(service_name)
-                
-                # Wait for next check
+                await self.check_all_components()
+                self._update_system_mode()
                 await asyncio.sleep(self.check_interval)
-                
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"[HealthMonitor] Error in monitor loop: {e}")
-                await asyncio.sleep(5)  # Brief pause before retry
+                logger.error(f"[HealthMonitor] Monitor loop error: {e}")
+                await asyncio.sleep(self.check_interval)
     
-    async def _check_service(self, service_name: str):
-        """Check health of a single service."""
-        health_check = self.services[service_name]
-        threshold = self.thresholds[service_name]
-        old_status = self.statuses[service_name]
-        
-        start_time = time.time()
-        
-        try:
-            # Execute health check
-            result = await asyncio.wait_for(
-                health_check(),
-                timeout=threshold * 2  # Give extra time for check itself
-            )
-            
-            latency = time.time() - start_time
-            latency_ms = latency * 1000
-            
-            # Determine if healthy
-            is_healthy = result and latency <= threshold
-            
-            # Create new status
-            new_status = HealthStatus(
-                service_name=service_name,
-                healthy=is_healthy,
-                latency_ms=latency_ms,
-                last_check=time.time(),
-                consecutive_failures=0 if is_healthy else old_status.consecutive_failures + 1,
-                error_message=None if is_healthy else f"Latency {latency:.2f}s exceeds threshold {threshold}s",
-            )
-            
-            # Check if exceeded failure threshold
-            if new_status.consecutive_failures >= self.failure_threshold:
-                new_status.healthy = False
-            
-            # Log status
-            if is_healthy:
-                logger.debug(
-                    f"[HealthMonitor] {service_name}: healthy "
-                    f"(latency={latency_ms:.0f}ms)"
-                )
-            else:
-                logger.warning(
-                    f"[HealthMonitor] {service_name}: degraded "
-                    f"(latency={latency_ms:.0f}ms, threshold={threshold*1000:.0f}ms)"
-                )
-            
-        except asyncio.TimeoutError:
-            new_status = HealthStatus(
-                service_name=service_name,
-                healthy=False,
-                latency_ms=None,
-                last_check=time.time(),
-                consecutive_failures=old_status.consecutive_failures + 1,
-                error_message=f"Health check timeout (>{threshold*2}s)",
-            )
-            logger.warning(
-                f"[HealthMonitor] {service_name}: timeout "
-                f"({new_status.consecutive_failures}/{self.failure_threshold})"
-            )
-            
-        except Exception as e:
-            new_status = HealthStatus(
-                service_name=service_name,
-                healthy=False,
-                latency_ms=None,
-                last_check=time.time(),
-                consecutive_failures=old_status.consecutive_failures + 1,
-                error_message=str(e),
-            )
-            logger.error(
-                f"[HealthMonitor] {service_name}: error - {e} "
-                f"({new_status.consecutive_failures}/{self.failure_threshold})"
-            )
-        
-        # Update status
-        self.statuses[service_name] = new_status
-        
-        # Notify listeners if health changed
-        if old_status.healthy != new_status.healthy:
-            self._notify_listeners(service_name, new_status)
+    async def check_all_components(self):
+        """Check health of all registered components."""
+        for name, health in self.components.items():
+            try:
+                await self.check_component(name)
+            except Exception as e:
+                logger.error(f"[HealthMonitor] Failed to check {name}: {e}")
     
-    def _notify_listeners(self, service_name: str, status: HealthStatus):
-        """Notify listeners of health status change."""
-        logger.info(
-            f"[HealthMonitor] {service_name} health changed: "
-            f"{'HEALTHY' if status.healthy else 'UNHEALTHY'}"
+    async def check_component(self, name: str) -> ComponentHealth:
+        """
+        Check health of specific component.
+        Override this method to implement actual health checks.
+        """
+        health = self.components.get(name)
+        if not health:
+            raise ValueError(f"Component '{name}' not registered")
+        
+        # Default: assume healthy (override in subclass)
+        health.mark_healthy(latency_ms=0)
+        return health
+    
+    def _update_system_mode(self):
+        """Update system mode based on component health."""
+        unhealthy_count = sum(
+            1 for h in self.components.values()
+            if h.status == "unhealthy"
         )
         
-        for listener in self.listeners:
-            try:
-                listener(service_name, status)
-            except Exception as e:
-                logger.error(f"[HealthMonitor] Listener error: {e}")
+        critical_count = sum(
+            1 for h in self.components.values()
+            if h.consecutive_failures >= self.unhealthy_threshold
+        )
+        
+        old_mode = self.mode
+        
+        if critical_count > 0:
+            self.mode = SystemMode.EMERGENCY
+        elif unhealthy_count > 0:
+            self.mode = SystemMode.DEGRADED
+        else:
+            # Check if recovering from degraded state
+            if self.mode in (SystemMode.DEGRADED, SystemMode.RECOVERY):
+                self.mode = SystemMode.RECOVERY
+                # After 2 successful checks, return to normal
+                all_healthy = all(
+                    h.status == "healthy" and h.consecutive_failures == 0
+                    for h in self.components.values()
+                )
+                if all_healthy:
+                    self.mode = SystemMode.NORMAL
+            else:
+                self.mode = SystemMode.NORMAL
+        
+        if old_mode != self.mode:
+            logger.warning(f"[HealthMonitor] System mode changed: {old_mode.value} → {self.mode.value}")
     
-    def is_healthy(self, service_name: str) -> bool:
-        """Check if service is currently healthy."""
-        status = self.statuses.get(service_name)
-        return status.healthy if status else False
+    def get_system_status(self) -> dict:
+        """Get overall system health status."""
+        return {
+            "mode": self.mode.value,
+            "components": {name: h.to_dict() for name, h in self.components.items()},
+            "summary": self._get_summary(),
+        }
     
-    def get_status(self, service_name: str) -> Optional[HealthStatus]:
-        """Get current health status for service."""
-        return self.statuses.get(service_name)
-    
-    def get_all_statuses(self) -> Dict[str, HealthStatus]:
-        """Get health statuses for all services."""
-        return self.statuses.copy()
-    
-    def get_latency(self, service_name: str) -> Optional[float]:
-        """Get last measured latency for service in milliseconds."""
-        status = self.statuses.get(service_name)
-        return status.latency_ms if status else None
+    def _get_summary(self) -> dict:
+        """Get health summary statistics."""
+        total = len(self.components)
+        healthy = sum(1 for h in self.components.values() if h.status == "healthy")
+        unhealthy = total - healthy
+        
+        avg_latency = None
+        if healthy > 0:
+            latencies = [h.latency_ms for h in self.components.values() if h.latency_ms is not None]
+            if latencies:
+                avg_latency = sum(latencies) / len(latencies)
+        
+        return {
+            "total_components": total,
+            "healthy_count": healthy,
+            "unhealthy_count": unhealthy,
+            "avg_latency_ms": round(avg_latency, 2) if avg_latency else None,
+        }
