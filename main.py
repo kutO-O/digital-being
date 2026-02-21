@@ -479,13 +479,11 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     
     # Layer 1: Goal-Oriented Behavior (integrates with heavy tick)
     goal_oriented = GoalOrientedBehavior(
-        memory=mem,
-        world=world,
         ollama=ollama,
-        tool_registry=tool_registry,
-        learning_engine=learning_engine,
-        user_model=user_model,
-        memory_dir=ROOT_DIR / "memory",
+        world=world,
+        memory=mem,
+        storage_dir=ROOT_DIR / "memory",
+        shell_executor=shell_executor,
     )
     logger.info(f"🎯 GoalOrientedBehavior ready.")
     
