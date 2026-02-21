@@ -16,6 +16,16 @@ from core.ollama_client import OllamaClient
 from core.message_protocol import Priority
 
 
+# Minimal config for Ollama
+OLLAMA_CONFIG = {
+    "ollama": {
+        "strategy_model": "llama3.2:3b",
+        "embed_model": "nomic-embed-text",
+        "host": "http://127.0.0.1:11434"
+    }
+}
+
+
 async def run_alice(storage_dir: Path, ollama: OllamaClient):
     """Alice - Research agent."""
     print("\n[Alice] Starting research agent...")
@@ -196,12 +206,8 @@ async def main():
     print("  3 Specialized Agents: Alice, Bob, Charlie")
     print("="*60)
     
-    # Initialize shared Ollama client
-    ollama = OllamaClient(
-        strategy_model="llama3.2:3b",
-        embed_model="nomic-embed-text",
-        host="http://127.0.0.1:11434"
-    )
+    # Initialize shared Ollama client (using same pattern as main.py)
+    ollama = OllamaClient(OLLAMA_CONFIG)
     
     # Check if Ollama is available
     if not ollama.is_available():
