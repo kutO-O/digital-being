@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 24: Added /meta-cognition endpoint for MetaCognition.
+Stage 26: Added /skills endpoint for SkillLibrary.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from core.reflection_engine import ReflectionEngine
     from core.self_modification import SelfModificationEngine
     from core.shell_executor import ShellExecutor
+    from core.skill_library import SkillLibrary  # Stage 26
     from core.strategy_engine import StrategyEngine
     from core.time_perception import TimePerception  # Stage 22
     from core.value_engine import ValueEngine
@@ -70,6 +71,7 @@ class IntrospectionAPI:
         app.router.add_post("/shell/execute", self._handle_shell_execute)
         app.router.add_get("/time", self._handle_time)  # Stage 22
         app.router.add_get("/meta-cognition", self._handle_meta_cognition)  # Stage 24
+        app.router.add_get("/skills", self._handle_skills)  # Stage 26
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
@@ -92,6 +94,44 @@ class IntrospectionAPI:
             raise
         response.headers.update(_CORS_HEADERS)
         return response
+
+    async def _handle_skills(self, request: web.Request) -> web.Response:
+        """GET /skills - Stage 26"""
+        try:
+            skill_lib = self._c.get("skill_library")
+            if not skill_lib:
+                return self._json({"error": "SkillLibrary not available"})
+            
+            # Get all skills
+            all_skills = skill_lib._skills
+            
+            # Format skills for API response
+            skills_list = []
+            for skill_id, skill_data in all_skills.items():
+                skills_list.append({
+                    "id": skill_id,
+                    "name": skill_data["name"],
+                    "action_type": skill_data.get("action_type", "unknown"),
+                    "description": skill_data["description"],
+                    "applicability": skill_data.get("applicability", ""),
+                    "expected_outcome": skill_data.get("expected_outcome", ""),
+                    "use_count": skill_data.get("use_count", 0),
+                    "success_count": skill_data.get("success_count", 0),
+                    "confidence": skill_data.get("confidence", 0.0),
+                    "created_at": skill_data.get("created_at", "")
+                })
+            
+            # Sort by confidence (descending)
+            skills_list.sort(key=lambda x: x["confidence"], reverse=True)
+            
+            stats = skill_lib.get_stats()
+            
+            return self._json({
+                "skills": skills_list,
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
 
     async def _handle_meta_cognition(self, request: web.Request) -> web.Response:
         """GET /meta-cognition - Stage 24"""
