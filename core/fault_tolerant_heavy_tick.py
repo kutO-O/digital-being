@@ -6,6 +6,7 @@ This is the main orchestrator that integrates:
 - PriorityExecutor for priority-based execution
 - Graceful degradation with fallback strategies
 - Parallel execution of optional steps
+- EpisodicPlanner for action simulation (Stage 25)
 
 Usage:
     Replace HeavyTick with FaultTolerantHeavyTick in main.py:
@@ -17,6 +18,7 @@ Usage:
         ollama=ollama_client,
         world=world_model,
         # ... all other components
+        episodic_planner=episodic_planner,  # NEW: Stage 25
     )
     
     await heavy_tick.start()
@@ -46,6 +48,7 @@ if TYPE_CHECKING:
     from core.contradiction_resolver import ContradictionResolver
     from core.curiosity_engine import CuriosityEngine
     from core.emotion_engine import EmotionEngine
+    from core.episodic_planner import EpisodicPlanner  # NEW: Stage 25
     from core.goal_persistence import GoalPersistence
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
@@ -69,7 +72,8 @@ log = logging.getLogger("digital_being.fault_tolerant_heavy_tick")
 STEP_TIMEOUTS = {
     "monologue": 30,
     "semantic_context": 10,
-    "goal_selection": 90,  # Most complex - multiple LLM calls
+    "planning": 60,  # NEW: Stage 25 - planning step
+    "goal_selection": 90,
     "action": 45,
     "after_action": 20,
     "curiosity": 30,
@@ -85,6 +89,7 @@ STEP_TIMEOUTS = {
 STEP_PRIORITIES = {
     "monologue": Priority.CRITICAL,
     "semantic_context": Priority.IMPORTANT,
+    "planning": Priority.IMPORTANT,  # NEW: Stage 25
     "goal_selection": Priority.CRITICAL,
     "action": Priority.CRITICAL,
     "after_action": Priority.CRITICAL,
@@ -114,6 +119,7 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
     - Graceful degradation on failures
     - Automatic fallback with result caching
     - Parallel execution of optional steps
+    - Episodic Planning (Stage 25) - simulate actions before execution
     
     Architecture:
     - FaultTolerantHeavyTickImpl: Core step implementations (monologue, goal, actions)
@@ -147,13 +153,15 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         time_perception: Optional["TimePerception"] = None,
         social_layer: Optional["SocialLayer"] = None,
         meta_cognition: Optional["MetaCognition"] = None,
-        # NEW: 8-Layer Cognitive Architecture components
+        # 8-Layer Cognitive Architecture components
         goal_oriented = None,
         tool_registry = None,
         learning_engine = None,
         user_model = None,
         proactive = None,
         meta_optimizer = None,
+        # NEW: Stage 25 - Episodic Planning
+        episodic_planner: Optional["EpisodicPlanner"] = None,
     ) -> None:
         # Store all components
         self._cfg = cfg
@@ -180,13 +188,16 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         self._social = social_layer
         self._meta_cog = meta_cognition
         
-        # NEW: 8-Layer Architecture components
+        # 8-Layer Architecture components
         self._goal_oriented = goal_oriented
         self._tool_registry = tool_registry
         self._learning_engine = learning_engine
         self._user_model = user_model
         self._proactive = proactive
         self._meta_optimizer = meta_optimizer
+        
+        # NEW: Stage 25 - Episodic Planning
+        self._episodic_planner = episodic_planner
         
         # Initialize Health Monitor
         self._health_monitor = HealthMonitor(check_interval=30)
@@ -212,6 +223,12 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         _cur_cfg = cfg.get("curiosity", {})
         self._curiosity_enabled = bool(_cur_cfg.get("enabled", True))
         
+        # NEW: Planning configuration
+        _planning_cfg = cfg.get("planning", {})
+        self._planning_enabled = bool(_planning_cfg.get("enabled", True))
+        self._planning_interval = int(_planning_cfg.get("simulate_every_n_ticks", 5))
+        self._planning_max_scenarios = int(_planning_cfg.get("max_scenarios", 3))
+        
         # Loggers
         from core.heavy_tick import HeavyTick
         self._monologue_log = HeavyTick._make_file_logger(
@@ -221,7 +238,7 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
             "digital_being.decisions", log_dir / "decisions.log"
         )
         
-        log.info("[FaultTolerantHeavyTick] Initialized with resilience features")
+        log.info("[FaultTolerantHeavyTick] Initialized with resilience features + EpisodicPlanner")
     
     async def start(self) -> None:
         """Start Heavy Tick loop with health monitoring."""
@@ -237,6 +254,11 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
             f"Interval: {self._interval}s, max timeout: {self._timeout}s"
         )
         log.info(f"[FaultTolerantHeavyTick] Adaptive timeouts: {STEP_TIMEOUTS}")
+        if self._planning_enabled and self._episodic_planner:
+            log.info(
+                f"[FaultTolerantHeavyTick] Episodic Planning enabled: "
+                f"every {self._planning_interval} ticks, max {self._planning_max_scenarios} scenarios"
+            )
         
         while self._running:
             tick_start = time.monotonic()
@@ -355,7 +377,35 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         
         semantic_ctx = semantic_result.result if semantic_result.success else ""
         
-        # Step 3: Goal Selection
+        # NEW: Step 2.5: Episodic Planning (Stage 25)
+        best_scenario = None
+        if (
+            self._planning_enabled 
+            and self._episodic_planner 
+            and self._episodic_planner.should_plan(n, self._planning_interval)
+        ):
+            log.info(f"[HeavyTick #{n}] Running episodic planning...")
+            planning_result = await self._executor.execute_step(
+                step_name="planning",
+                func=self._step_planning,
+                priority=STEP_PRIORITIES["planning"],
+                timeout=STEP_TIMEOUTS["planning"],
+                fallback=lambda: None,
+                n=n,
+                monologue=monologue,
+                semantic_ctx=semantic_ctx,
+            )
+            
+            if planning_result.success and planning_result.result:
+                best_scenario = planning_result.result
+                log.info(
+                    f"[HeavyTick #{n}] Planning selected: "
+                    f"action='{best_scenario.get('action')}', "
+                    f"risk={best_scenario.get('risk_level')}, "
+                    f"success_prob={best_scenario.get('success_probability', 0):.2f}"
+                )
+        
+        # Step 3: Goal Selection (может использовать результат планирования)
         goal_result = await self._executor.execute_step(
             step_name="goal_selection",
             func=self._step_goal_selection,
@@ -365,6 +415,7 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
             n=n,
             monologue=monologue,
             semantic_ctx=semantic_ctx,
+            planned_scenario=best_scenario,  # NEW: pass planning result
         )
         
         if not goal_result.success:
@@ -509,3 +560,88 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
             f"{ollama_stats['success_rate']}% success, "
             f"{ollama_stats['avg_latency_ms']:.0f}ms avg latency"
         )
+    
+    # ================================================================
+    # NEW: Stage 25 - Episodic Planning Step
+    # ================================================================
+    
+    async def _step_planning(
+        self,
+        n: int,
+        monologue: str,
+        semantic_ctx: str,
+    ) -> dict | None:
+        """
+        Stage 25: Simulate multiple action scenarios and select best.
+        
+        Returns:
+            Best scenario dict or None if planning failed
+        """
+        if not self._episodic_planner:
+            return None
+        
+        try:
+            # Build current state for simulation
+            current_state = {
+                "tick": n,
+                "mode": self._values.get_mode(),
+                "monologue": monologue[:200],
+                "semantic_context": semantic_ctx[:200],
+            }
+            
+            # Get possible actions to simulate
+            possible_actions = self._get_possible_actions()
+            
+            # Run simulations
+            loop = asyncio.get_event_loop()
+            scenarios = await loop.run_in_executor(
+                None,
+                lambda: self._episodic_planner.plan_action(
+                    current_state=current_state,
+                    possible_actions=possible_actions,
+                    episodic=self._mem,
+                    vector_memory=self._vector_mem,
+                    world=self._world,
+                    beliefs=self._beliefs,
+                    max_scenarios=self._planning_max_scenarios,
+                )
+            )
+            
+            if not scenarios:
+                log.warning(f"[HeavyTick #{n}] Planning: no scenarios generated")
+                return None
+            
+            # Select best scenario
+            best = self._episodic_planner.select_best_scenario(scenarios)
+            
+            if best:
+                self._mem.add_episode(
+                    "planning.completed",
+                    f"Планирование: выбрано действие '{best.get('action')}' "
+                    f"(вероятность успеха: {best.get('success_probability', 0):.2f}, "
+                    f"риск: {best.get('risk_level')})",
+                    outcome="success",
+                    data={"scenario": best},
+                )
+            
+            return best
+            
+        except Exception as e:
+            log.error(f"[HeavyTick #{n}] Planning failed: {e}")
+            return None
+    
+    def _get_possible_actions(self) -> list[str]:
+        """
+        Get list of possible action types for simulation.
+        
+        Returns standard action types based on current system capabilities.
+        """
+        actions = ["observe", "analyze", "write"]
+        
+        if self._shell_executor:
+            actions.append("shell")
+        
+        if self._reflection:
+            actions.append("reflect")
+        
+        return actions

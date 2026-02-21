@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 25: Complete Cognitive Architecture (8 layers) integrated.
+Stage 25: EpisodicPlanner + Complete Cognitive Architecture (8 layers) integrated.
 """
 
 from __future__ import annotations
@@ -38,6 +38,9 @@ from core.memory_consolidation import MemoryConsolidation
 from core.theory_of_mind import UserModel
 from core.proactive_behavior import ProactiveBehaviorEngine
 from core.meta_learning import MetaOptimizer
+
+# NEW: Episodic Planning (Stage 25)
+from core.episodic_planner import EpisodicPlanner
 
 from core.introspection_api import IntrospectionAPI
 from core.light_tick import LightTick
@@ -247,7 +250,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if not mem.health_check():
         logger.error("EpisodicMemory health check FAILED. Aborting.")
         return
-    mem.add_episode("system.start", "Digital Being started with 8-layer architecture", outcome="success")
+    mem.add_episode("system.start", "Digital Being started with EpisodicPlanner + 8-layer architecture", outcome="success")
 
     principles_stored = mem.get_active_principles()
     if principles_stored:
@@ -413,7 +416,21 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info("MetaCognition disabled.")
 
     # ============================================================
-    # NEW: 8-Layer Cognitive Architecture
+    # NEW: Stage 25 - Episodic Planning
+    # ============================================================
+    planning_cfg = cfg.get("planning", {})
+    planning_enabled = bool(planning_cfg.get("enabled", True))
+    episodic_planner = None
+    if planning_enabled:
+        episodic_planner = EpisodicPlanner(memory_dir=ROOT_DIR / "memory", ollama=ollama)
+        episodic_planner.load_history()
+        planning_stats = episodic_planner.get_stats()
+        logger.info(f"🧩 EpisodicPlanner ready. simulations={planning_stats['total_simulations']} sessions={planning_stats['planning_sessions']}")
+    else:
+        logger.info("🧩 EpisodicPlanner disabled.")
+
+    # ============================================================
+    # 8-Layer Cognitive Architecture
     # ============================================================
     
     # Layer 2: Tool Registry
@@ -513,13 +530,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         time_perception=time_perc,
         social_layer=social_layer,
         meta_cognition=meta_cog,
-        # NEW: Cognitive architecture components
+        # Cognitive architecture components
         goal_oriented=goal_oriented,
         tool_registry=tool_registry,
         learning_engine=learning_engine,
         user_model=user_model,
         proactive=proactive,
         meta_optimizer=meta_optimizer,
+        # NEW: Episodic Planning
+        episodic_planner=episodic_planner,
     )
     logger.info("⚡ FaultTolerantHeavyTick initialized.")
 
@@ -536,13 +555,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         "belief_system": belief_system, "contradiction_resolver": contradiction_resolver,
         "shell_executor": shell_executor, "time_perception": time_perc, "social_layer": social_layer,
         "meta_cognition": meta_cog,
-        # NEW components
+        # 8-layer components
         "tool_registry": tool_registry,
         "learning_engine": learning_engine,
         "user_model": user_model,
         "proactive": proactive,
         "meta_optimizer": meta_optimizer,
         "goal_oriented": goal_oriented,
+        # NEW: Episodic Planning
+        "episodic_planner": episodic_planner,
     }
     api = IntrospectionAPI(
         host=api_cfg.get("host", "127.0.0.1"),
@@ -587,7 +608,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if meta_cog:
         meta_stats = meta_cog.get_stats()
         logger.info(f"  MetaCog      : insights={meta_stats['total_insights']} calibration={meta_stats['calibration_score']:.2f}")
-    # NEW architecture stats
+    # 8-layer architecture stats
     logger.info(f"  🛠️  Tools       : {tool_stats['total_tools']} registered")
     logger.info(f"  🧠 Learning    : {learning_stats.get('total_patterns', 0)} patterns")
     if consolidator:
@@ -598,10 +619,14 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"  🚀 Proactive   : {len(proactive._triggers)} triggers")
     if meta_optimizer:
         logger.info(f"  🔬 MetaLearn   : {len(meta_optimizer._ab_tests)} A/B tests")
+    # NEW: Episodic Planning
+    if episodic_planner:
+        planning_stats = episodic_planner.get_stats()
+        logger.info(f"  🧩 Planning    : {planning_stats['total_simulations']} simulations, {planning_stats['planning_sessions']} sessions")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 72)
-    logger.info("🧠 8-Layer Cognitive Architecture ACTIVE")
+    logger.info("🧠 8-Layer + EpisodicPlanner Cognitive Architecture ACTIVE")
     logger.info("Running... (Ctrl+C to stop)")
 
     stop_event = asyncio.Event()
@@ -662,7 +687,7 @@ def main() -> None:
     seed = load_yaml(SEED_PATH)
     logger = setup_logging(cfg)
     logger.info("=" * 60)
-    logger.info("  🧠 Digital Being — 8-Layer Cognitive Architecture")
+    logger.info("  🧠 Digital Being — EpisodicPlanner + 8-Layer Architecture")
     logger.info(f"  Version        : {cfg['system']['version']}")
     logger.info(f"  Strategy model : {cfg['ollama']['strategy_model']}")
     logger.info(f"  Embed model    : {cfg['ollama']['embed_model']}")

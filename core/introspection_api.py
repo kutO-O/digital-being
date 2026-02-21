@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 24: Added /meta-cognition endpoint for MetaCognition.
+Stage 25: Added /planning endpoint for EpisodicPlanner.
 """
 
 from __future__ import annotations
@@ -22,10 +22,11 @@ if TYPE_CHECKING:
     from core.curiosity_engine import CuriosityEngine
     from core.dream_mode import DreamMode
     from core.emotion_engine import EmotionEngine
+    from core.episodic_planner import EpisodicPlanner  # Stage 25
     from core.goal_persistence import GoalPersistence
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
-    from core.meta_cognition import MetaCognition  # Stage 24
+    from core.meta_cognition import MetaCognition
     from core.milestones import Milestones
     from core.narrative_engine import NarrativeEngine
     from core.ollama_client import OllamaClient
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
     from core.self_modification import SelfModificationEngine
     from core.shell_executor import ShellExecutor
     from core.strategy_engine import StrategyEngine
-    from core.time_perception import TimePerception  # Stage 22
+    from core.time_perception import TimePerception
     from core.value_engine import ValueEngine
 
 log = logging.getLogger("digital_being.introspection_api")
@@ -68,8 +69,9 @@ class IntrospectionAPI:
         app.router.add_get("/contradictions", self._handle_contradictions)
         app.router.add_get("/shell/stats", self._handle_shell_stats)
         app.router.add_post("/shell/execute", self._handle_shell_execute)
-        app.router.add_get("/time", self._handle_time)  # Stage 22
-        app.router.add_get("/meta-cognition", self._handle_meta_cognition)  # Stage 24
+        app.router.add_get("/time", self._handle_time)
+        app.router.add_get("/meta-cognition", self._handle_meta_cognition)
+        app.router.add_get("/planning", self._handle_planning)  # NEW: Stage 25
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
@@ -92,6 +94,24 @@ class IntrospectionAPI:
             raise
         response.headers.update(_CORS_HEADERS)
         return response
+
+    async def _handle_planning(self, request: web.Request) -> web.Response:
+        """GET /planning - Stage 25: Episodic Planning history and stats"""
+        try:
+            planner = self._c.get("episodic_planner")
+            if not planner:
+                return self._json({"error": "EpisodicPlanner not available"})
+            
+            limit = int(request.query.get("limit", "10"))
+            history = planner.get_history(limit)
+            stats = planner.get_stats()
+            
+            return self._json({
+                "history": history,
+                "stats": stats,
+            })
+        except Exception as e:
+            return self._error(e)
 
     async def _handle_meta_cognition(self, request: web.Request) -> web.Response:
         """GET /meta-cognition - Stage 24"""
