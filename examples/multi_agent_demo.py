@@ -63,7 +63,8 @@ async def run_alice(ollama: OllamaClient):
     )
     
     # Wait for other agents to register
-    await asyncio.sleep(2)
+    print("[Alice] Waiting for other agents to join...")
+    await asyncio.sleep(3)
     
     # Check online agents
     agents = coordinator.get_online_agents()
@@ -73,11 +74,20 @@ async def run_alice(ollama: OllamaClient):
     
     # Send query to Bob
     print("\n[Alice] Asking Bob about web frameworks...")
+    
+    # Start background polling task
+    async def poll_messages():
+        for _ in range(15):
+            await coordinator.process_messages()
+            await asyncio.sleep(0.5)
+    
+    poll_task = asyncio.create_task(poll_messages())
+    
     answer = await coordinator.send_query_and_wait(
         to_agent="bob_001",
         question="What's the best Python web framework for REST APIs?",
         context={"requirements": ["fast", "async", "modern"]},
-        timeout=10.0
+        timeout=8.0
     )
     print(f"[Alice] Bob's answer: {answer}")
     
@@ -94,17 +104,15 @@ async def run_alice(ollama: OllamaClient):
     )
     print(f"[Alice] Task delegated: {task_id[:8]}")
     
-    # Process messages for a bit
-    for _ in range(5):
-        await coordinator.process_messages()
-        await asyncio.sleep(1)
+    # Wait a bit for task processing
+    await asyncio.sleep(2)
     
     # Request consensus
     print("\n[Alice] Requesting consensus on database choice...")
     result = await coordinator.request_consensus(
         question="Which database should we use?",
         options=["PostgreSQL", "MongoDB", "SQLite"],
-        timeout=10
+        timeout=8
     )
     print(f"[Alice] Consensus reached: {result}")
     
@@ -114,6 +122,9 @@ async def run_alice(ollama: OllamaClient):
         announcement="Project phase 1 completed!",
         data={"completed_tasks": 5, "next_phase": "testing"}
     )
+    
+    # Wait for poll task
+    await poll_task
     
     print("\n[Alice] Demo complete!")
     print(f"[Alice] Stats: {coordinator.get_stats()}")
@@ -166,12 +177,12 @@ async def run_bob(ollama: OllamaClient):
     
     # Process messages
     print("[Bob] Processing incoming messages...")
-    for _ in range(20):
+    for i in range(30):
         count = await coordinator.process_messages()
         if count > 0:
-            print(f"[Bob] Processed {count} messages")
+            print(f"[Bob] Processed {count} messages at tick {i}")
         coordinator.send_heartbeat(current_load=0.4)
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
     
     print("\n[Bob] Demo complete!")
     print(f"[Bob] Stats: {coordinator.get_stats()}")
@@ -208,10 +219,12 @@ async def run_charlie(ollama: OllamaClient):
     
     # Process messages and participate in consensus
     print("[Charlie] Processing messages and voting...")
-    for _ in range(20):
-        await coordinator.process_messages()
+    for i in range(30):
+        count = await coordinator.process_messages()
+        if count > 0:
+            print(f"[Charlie] Processed {count} messages at tick {i}")
         coordinator.send_heartbeat(current_load=0.2)
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
     
     print("\n[Charlie] Demo complete!")
     print(f"[Charlie] Stats: {coordinator.get_stats()}")
@@ -220,6 +233,13 @@ async def run_charlie(ollama: OllamaClient):
 async def main():
     """Run multi-agent demo."""
     SHARED_STORAGE.mkdir(parents=True, exist_ok=True)
+    
+    # Clean up old shared files
+    if SHARED_REGISTRY.exists():
+        SHARED_REGISTRY.unlink()
+    if SHARED_MESSAGES.exists():
+        import shutil
+        shutil.rmtree(SHARED_MESSAGES)
     
     print("\n" + "="*60)
     print("  Multi-Agent Communication Demo")
