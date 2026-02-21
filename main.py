@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 26: Skill Library integrated.
+Stage 26.5: Skill Library integrated with HeavyTick.
 """
 
 from __future__ import annotations
@@ -532,11 +532,12 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         goal_oriented=goal_oriented,
         tool_registry=tool_registry,
         learning_engine=learning_engine,
+        skill_library=skill_library,  # NEW: Stage 26.5
         user_model=user_model,
         proactive=proactive,
         meta_optimizer=meta_optimizer,
     )
-    logger.info("⚡ FaultTolerantHeavyTick initialized.")
+    logger.info("⚡ FaultTolerantHeavyTick initialized with SkillLibrary.")
 
     ticker = LightTick(cfg=cfg, bus=bus)
 
@@ -619,7 +620,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 72)
-    logger.info("🧠 8-Layer Cognitive Architecture + Stage 26 ACTIVE")
+    logger.info("🧠 8-Layer Cognitive Architecture + Stage 26.5 ACTIVE")
     logger.info("Running... (Ctrl+C to stop)")
 
     stop_event = asyncio.Event()
@@ -669,6 +670,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         user_model.save()
     if meta_optimizer:
         meta_optimizer.save()
+    if skill_library:  # NEW: Stage 26.5
+        skill_library.save()
 
     mem.add_episode("system.stop", "Digital Being stopped cleanly", outcome="success")
     vector_mem.close()
@@ -680,7 +683,7 @@ def main() -> None:
     seed = load_yaml(SEED_PATH)
     logger = setup_logging(cfg)
     logger.info("=" * 60)
-    logger.info("  🧠 Digital Being — Stage 26: Skill Library")
+    logger.info("  🧠 Digital Being — Stage 26.5: Skill Library + HeavyTick")
     logger.info(f"  Version        : {cfg['system']['version']}")
     logger.info(f"  Strategy model : {cfg['ollama']['strategy_model']}")
     logger.info(f"  Embed model    : {cfg['ollama']['embed_model']}")
