@@ -32,6 +32,13 @@ scores:
   curiosity_base: 0.5
   caution_base: 0.5
   stability_base: 0.5
+
+  # Thresholds used by ValueEngine.get_mode()
+  thresholds:
+    stability_warn: 0.4
+    accuracy_warn: 0.4
+    growth_warn: 0.3
+
   modes:
     curious:
       exploration_boost: 0.2
