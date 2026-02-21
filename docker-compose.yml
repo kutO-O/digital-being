@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: digital_being_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: digital_being_postgres
+    environment:
+      POSTGRES_DB: digital_being_db
+      POSTGRES_USER: digital_being
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  celery_worker:
+    build: .
+    container_name: digital_being_celery_worker
+    command: celery -A celery_app worker --loglevel=info --concurrency=4
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://digital_being:password@postgres:5432/digital_being_db
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    volumes:
+      - .:/app
+
+volumes:
+  redis_data:
+  postgres_data:
