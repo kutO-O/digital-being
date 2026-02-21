@@ -43,7 +43,14 @@ class MultiAgentCoordinator:
         self._storage_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize components
-        self._registry = AgentRegistry(self._storage_dir / "registry.json")
+        # Use shared registry path if provided, otherwise use agent-specific
+        registry_path = config.get("shared_registry_path")
+        if registry_path:
+            registry_path = Path(registry_path)
+        else:
+            registry_path = self._storage_dir / "registry.json"
+        
+        self._registry = AgentRegistry(registry_path)
         self._broker = MessageBroker(agent_id, self._storage_dir / "messages")
         self._skill_exchange = SkillExchange(agent_id, skill_library, self._broker)
         
