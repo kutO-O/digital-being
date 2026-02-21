@@ -1,0 +1,11 @@
+{
+  "date": "2026-02-20",
+  "scores": {
+    "stability": 0.7,
+    "accuracy": 0.8,
+    "growth": 0.5,
+    "curiosity": 0.0,
+    "boredom": 0.0
+  },
+  "mode": "normal"
+}
