@@ -12,15 +12,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.multi_agent_coordinator import MultiAgentCoordinator
 from core.skill_library import SkillLibrary
+from core.ollama_client import OllamaClient
 from core.message_protocol import Priority
 
 
-async def run_alice(storage_dir: Path):
+async def run_alice(storage_dir: Path, ollama: OllamaClient):
     """Alice - Research agent."""
     print("\n[Alice] Starting research agent...")
     
     # Initialize components
-    skill_lib = SkillLibrary(memory_dir=storage_dir / "alice" / "skills")
+    skill_lib = SkillLibrary(
+        memory_dir=storage_dir / "alice" / "skills",
+        ollama=ollama
+    )
+    skill_lib.load()
     
     config = {
         "auto_register": True,
@@ -93,11 +98,15 @@ async def run_alice(storage_dir: Path):
     print(f"[Alice] Stats: {coordinator.get_stats()}")
 
 
-async def run_bob(storage_dir: Path):
+async def run_bob(storage_dir: Path, ollama: OllamaClient):
     """Bob - Coding agent."""
     print("\n[Bob] Starting coding agent...")
     
-    skill_lib = SkillLibrary(memory_dir=storage_dir / "bob" / "skills")
+    skill_lib = SkillLibrary(
+        memory_dir=storage_dir / "bob" / "skills",
+        ollama=ollama
+    )
+    skill_lib.load()
     
     # Add a coding skill
     skill_lib._skills.append({
@@ -142,11 +151,15 @@ async def run_bob(storage_dir: Path):
     print(f"[Bob] Stats: {coordinator.get_stats()}")
 
 
-async def run_charlie(storage_dir: Path):
+async def run_charlie(storage_dir: Path, ollama: OllamaClient):
     """Charlie - Testing agent."""
     print("\n[Charlie] Starting testing agent...")
     
-    skill_lib = SkillLibrary(memory_dir=storage_dir / "charlie" / "skills")
+    skill_lib = SkillLibrary(
+        memory_dir=storage_dir / "charlie" / "skills",
+        ollama=ollama
+    )
+    skill_lib.load()
     
     config = {
         "auto_register": True,
@@ -183,11 +196,26 @@ async def main():
     print("  3 Specialized Agents: Alice, Bob, Charlie")
     print("="*60)
     
+    # Initialize shared Ollama client
+    ollama = OllamaClient(
+        strategy_model="llama3.2:3b",
+        embed_model="nomic-embed-text",
+        host="http://127.0.0.1:11434"
+    )
+    
+    # Check if Ollama is available
+    if not ollama.is_available():
+        print("\n❌ Ollama is not available. Please start Ollama service.")
+        print("   Run: ollama serve")
+        return
+    
+    print("✅ Ollama connected\n")
+    
     # Run all agents concurrently
     await asyncio.gather(
-        run_alice(storage_dir),
-        run_bob(storage_dir),
-        run_charlie(storage_dir)
+        run_alice(storage_dir, ollama),
+        run_bob(storage_dir, ollama),
+        run_charlie(storage_dir, ollama)
     )
     
     print("\n" + "="*60)
