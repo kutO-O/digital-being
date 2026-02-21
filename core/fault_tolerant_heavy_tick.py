@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from core.value_engine import ValueEngine
     from core.world_model import WorldModel
     from core.meta_cognition import MetaCognition
+    from core.skill_library import SkillLibrary  # NEW: Stage 26.5
 
 log = logging.getLogger("digital_being.fault_tolerant_heavy_tick")
 
@@ -147,6 +148,7 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         time_perception: Optional["TimePerception"] = None,
         social_layer: Optional["SocialLayer"] = None,
         meta_cognition: Optional["MetaCognition"] = None,
+        skill_library: Optional["SkillLibrary"] = None,  # NEW: Stage 26.5
         # NEW: 8-Layer Cognitive Architecture components
         goal_oriented = None,
         tool_registry = None,
@@ -179,6 +181,7 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         self._time_perc = time_perception
         self._social = social_layer
         self._meta_cog = meta_cognition
+        self._skill_library = skill_library  # NEW: Stage 26.5
         
         # NEW: 8-Layer Architecture components
         self._goal_oriented = goal_oriented
@@ -489,6 +492,23 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
                     f"[HeavyTick #{n}] Optional step '{result.step_name}' "
                     f"{'used fallback' if result.used_fallback else 'failed'}"
                 )
+        
+        # === PHASE 3: Skill Extraction (Stage 26.5) ===
+        if self._skill_library and n % 20 == 0:  # Every 20 ticks
+            log.info(f"[HeavyTick #{n}] Extracting skills from recent actions...")
+            try:
+                extract_result = self._skill_library.extract_skills()
+                if extract_result.get("extracted"):
+                    skills_count = len(extract_result['skills'])
+                    log.info(
+                        f"[HeavyTick #{n}] Extracted {skills_count} new skills"
+                    )
+                    for skill in extract_result['skills']:
+                        log.debug(f"  - {skill['name']}: {skill['description'][:80]}")
+            except Exception as e:
+                log.error(f"[HeavyTick #{n}] Skill extraction failed: {e}")
+        
+        log.info(f"[HeavyTick #{n}] Completed (all phases done)")
         
         # Print stats
         stats = self._executor.get_stats()

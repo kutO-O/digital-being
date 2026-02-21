@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 25: Complete Cognitive Architecture (8 layers) integrated.
+Stage 26.5: Skill Library integrated with HeavyTick.
 """
 
 from __future__ import annotations
@@ -38,6 +38,9 @@ from core.memory_consolidation import MemoryConsolidation
 from core.theory_of_mind import UserModel
 from core.proactive_behavior import ProactiveBehaviorEngine
 from core.meta_learning import MetaOptimizer
+
+# NEW: Stage 26 - Skill Library
+from core.skill_library import SkillLibrary
 
 from core.introspection_api import IntrospectionAPI
 from core.light_tick import LightTick
@@ -247,7 +250,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if not mem.health_check():
         logger.error("EpisodicMemory health check FAILED. Aborting.")
         return
-    mem.add_episode("system.start", "Digital Being started with 8-layer architecture", outcome="success")
+    mem.add_episode("system.start", "Digital Being started with Skill Library", outcome="success")
 
     principles_stored = mem.get_active_principles()
     if principles_stored:
@@ -413,7 +416,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info("MetaCognition disabled.")
 
     # ============================================================
-    # NEW: 8-Layer Cognitive Architecture
+    # NEW: 8-Layer Cognitive Architecture + Stage 26
     # ============================================================
     
     # Layer 2: Tool Registry
@@ -429,6 +432,18 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     )
     learning_stats = learning_engine.get_statistics()
     logger.info(f"🧠 LearningEngine ready. patterns={learning_stats.get('total_patterns', 0)}")
+    
+    # NEW: Stage 26 - Skill Library
+    skill_cfg = cfg.get("skills", {})
+    skill_enabled = bool(skill_cfg.get("enabled", True))
+    skill_library = None
+    if skill_enabled:
+        skill_library = SkillLibrary(memory_dir=ROOT_DIR / "memory", ollama=ollama)
+        skill_library.load()
+        skill_stats = skill_library.get_stats()
+        logger.info(f"📚 SkillLibrary ready. skills={skill_stats['total_skills']} extractions={skill_stats['total_extractions']} uses={skill_stats['total_skill_uses']}")
+    else:
+        logger.info("📚 SkillLibrary disabled.")
     
     # Layer 4: Memory Consolidation
     consolidation_cfg = cfg.get("consolidation", {})
@@ -517,11 +532,12 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         goal_oriented=goal_oriented,
         tool_registry=tool_registry,
         learning_engine=learning_engine,
+        skill_library=skill_library,  # NEW: Stage 26.5
         user_model=user_model,
         proactive=proactive,
         meta_optimizer=meta_optimizer,
     )
-    logger.info("⚡ FaultTolerantHeavyTick initialized.")
+    logger.info("⚡ FaultTolerantHeavyTick initialized with SkillLibrary.")
 
     ticker = LightTick(cfg=cfg, bus=bus)
 
@@ -539,6 +555,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         # NEW components
         "tool_registry": tool_registry,
         "learning_engine": learning_engine,
+        "skill_library": skill_library,  # NEW: Stage 26
         "user_model": user_model,
         "proactive": proactive,
         "meta_optimizer": meta_optimizer,
@@ -590,6 +607,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     # NEW architecture stats
     logger.info(f"  🛠️  Tools       : {tool_stats['total_tools']} registered")
     logger.info(f"  🧠 Learning    : {learning_stats.get('total_patterns', 0)} patterns")
+    if skill_library:  # NEW: Stage 26
+        logger.info(f"  📚 Skills      : {skill_stats['total_skills']} skills, {skill_stats['total_skill_uses']} uses")
     if consolidator:
         logger.info(f"  💤 Consolidatn : {'enabled' if consolidation_enabled else 'disabled'}")
     if user_model:
@@ -601,7 +620,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 72)
-    logger.info("🧠 8-Layer Cognitive Architecture ACTIVE")
+    logger.info("🧠 8-Layer Cognitive Architecture + Stage 26.5 ACTIVE")
     logger.info("Running... (Ctrl+C to stop)")
 
     stop_event = asyncio.Event()
@@ -651,6 +670,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         user_model.save()
     if meta_optimizer:
         meta_optimizer.save()
+    if skill_library:  # NEW: Stage 26.5
+        skill_library.save()
 
     mem.add_episode("system.stop", "Digital Being stopped cleanly", outcome="success")
     vector_mem.close()
@@ -662,7 +683,7 @@ def main() -> None:
     seed = load_yaml(SEED_PATH)
     logger = setup_logging(cfg)
     logger.info("=" * 60)
-    logger.info("  🧠 Digital Being — 8-Layer Cognitive Architecture")
+    logger.info("  🧠 Digital Being — Stage 26.5: Skill Library + HeavyTick")
     logger.info(f"  Version        : {cfg['system']['version']}")
     logger.info(f"  Strategy model : {cfg['ollama']['strategy_model']}")
     logger.info(f"  Embed model    : {cfg['ollama']['embed_model']}")
