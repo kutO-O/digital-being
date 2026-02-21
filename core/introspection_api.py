@@ -102,32 +102,16 @@ class IntrospectionAPI:
             if not skill_lib:
                 return self._json({"error": "SkillLibrary not available"})
             
-            # Get all skills
+            # Get all skills - _skills is a list
             all_skills = skill_lib._skills
             
-            # Format skills for API response
-            skills_list = []
-            for skill_id, skill_data in all_skills.items():
-                skills_list.append({
-                    "id": skill_id,
-                    "name": skill_data["name"],
-                    "action_type": skill_data.get("action_type", "unknown"),
-                    "description": skill_data["description"],
-                    "applicability": skill_data.get("applicability", ""),
-                    "expected_outcome": skill_data.get("expected_outcome", ""),
-                    "use_count": skill_data.get("use_count", 0),
-                    "success_count": skill_data.get("success_count", 0),
-                    "confidence": skill_data.get("confidence", 0.0),
-                    "created_at": skill_data.get("created_at", "")
-                })
-            
             # Sort by confidence (descending)
-            skills_list.sort(key=lambda x: x["confidence"], reverse=True)
+            sorted_skills = sorted(all_skills, key=lambda x: x.get("confidence", 0.0), reverse=True)
             
             stats = skill_lib.get_stats()
             
             return self._json({
-                "skills": skills_list,
+                "skills": sorted_skills,
                 "stats": stats
             })
         except Exception as e:
