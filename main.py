@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 24: MetaCognition integrated.
+Stage 25: Complete Cognitive Architecture (8 layers) integrated.
 """
 
 from __future__ import annotations
@@ -24,12 +24,26 @@ from core.emotion_engine import EmotionEngine
 from core.event_bus import EventBus
 from core.file_monitor import FileMonitor
 from core.goal_persistence import GoalPersistence
-from core.heavy_tick import HeavyTick
+
+# NEW: Fault-Tolerant Architecture
+from core.fault_tolerant_heavy_tick import FaultTolerantHeavyTick
+
+# NEW: Goal Hierarchy & Tools & Learning
+from core.goal_integration import GoalOrientedBehavior
+from core.tools import ToolRegistry, initialize_default_tools
+from core.learning import LearningEngine, PatternGuidedPlanner
+
+# NEW: Advanced Cognitive Features
+from core.memory_consolidation import MemoryConsolidation
+from core.theory_of_mind import UserModel
+from core.proactive_behavior import ProactiveBehaviorEngine
+from core.meta_learning import MetaOptimizer
+
 from core.introspection_api import IntrospectionAPI
 from core.light_tick import LightTick
 from core.memory.episodic import EpisodicMemory
 from core.memory.vector_memory import VectorMemory
-from core.meta_cognition import MetaCognition  # Stage 24
+from core.meta_cognition import MetaCognition
 from core.milestones import Milestones
 from core.narrative_engine import NarrativeEngine
 from core.ollama_client import OllamaClient
@@ -37,9 +51,9 @@ from core.reflection_engine import ReflectionEngine
 from core.self_model import SelfModel
 from core.self_modification import SelfModificationEngine
 from core.shell_executor import ShellExecutor
-from core.social_layer import SocialLayer  # Stage 23
+from core.social_layer import SocialLayer
 from core.strategy_engine import StrategyEngine
-from core.time_perception import TimePerception  # Stage 22
+from core.time_perception import TimePerception
 from core.value_engine import ValueEngine
 from core.world_model import WorldModel
 
@@ -83,6 +97,7 @@ def ensure_directories(cfg: dict) -> None:
         ROOT_DIR / "memory" / "self_snapshots",
         ROOT_DIR / "milestones",
         ROOT_DIR / "sandbox",
+        ROOT_DIR / "data",  # NEW: for cognitive features
     ]
     for p in dirs:
         p.mkdir(parents=True, exist_ok=True)
@@ -205,6 +220,22 @@ async def _dream_loop(dream: DreamMode, stop_event: asyncio.Event, logger: loggi
                 logger.error(f"DreamMode loop error: {e}")
     logger.info("DreamMode loop stopped.")
 
+# NEW: Memory consolidation loop
+async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: asyncio.Event, logger: logging.Logger) -> None:
+    logger.info("MemoryConsolidation loop started.")
+    while not stop_event.is_set():
+        await asyncio.sleep(3600)  # Check every hour
+        if stop_event.is_set():
+            break
+        if consolidator.should_consolidate():
+            logger.info("MemoryConsolidation: starting sleep cycle...")
+            try:
+                result = await consolidator.consolidate()
+                logger.info(f"MemoryConsolidation: {result}")
+            except Exception as e:
+                logger.error(f"MemoryConsolidation error: {e}")
+    logger.info("MemoryConsolidation loop stopped.")
+
 async def async_main(cfg: dict, logger: logging.Logger) -> None:
     loop = asyncio.get_running_loop()
     state_path = Path(cfg["paths"]["state"])
@@ -216,7 +247,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if not mem.health_check():
         logger.error("EpisodicMemory health check FAILED. Aborting.")
         return
-    mem.add_episode("system.start", "Digital Being started", outcome="success")
+    mem.add_episode("system.start", "Digital Being started with 8-layer architecture", outcome="success")
 
     principles_stored = mem.get_active_principles()
     if principles_stored:
@@ -346,7 +377,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("ShellExecutor disabled.")
 
-    # Stage 22: TimePerception
     time_perc_cfg = cfg.get("time_perception", {})
     time_perc_enabled = bool(time_perc_cfg.get("enabled", True))
     time_perc = None
@@ -358,7 +388,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("TimePerception disabled.")
 
-    # Stage 23: SocialLayer
     social_cfg = cfg.get("social", {})
     social_enabled = bool(social_cfg.get("enabled", True))
     social_layer = None
@@ -372,7 +401,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("SocialLayer disabled.")
 
-    # Stage 24: MetaCognition
     meta_cog_cfg = cfg.get("meta_cognition", {})
     meta_cog_enabled = bool(meta_cog_cfg.get("enabled", True))
     meta_cog = None
@@ -384,41 +412,144 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("MetaCognition disabled.")
 
-    heavy = HeavyTick(
-        cfg=cfg, ollama=ollama, world=world, values=values, self_model=self_model, mem=mem, milestones=milestones,
-        log_dir=log_dir, sandbox_dir=ROOT_DIR / "sandbox", strategy=strategy, vector_memory=vector_mem,
-        emotion_engine=emotion_engine, reflection_engine=reflection_engine, narrative_engine=narrative_engine,
-        goal_persistence=goal_persistence, attention_system=attention_system,
+    # ============================================================
+    # NEW: 8-Layer Cognitive Architecture
+    # ============================================================
+    
+    # Layer 2: Tool Registry
+    tool_registry = ToolRegistry()
+    initialize_default_tools(tool_registry, sandbox_dir=ROOT_DIR / "sandbox")
+    tool_stats = tool_registry.get_statistics()
+    logger.info(f"🛠️  ToolRegistry ready. tools={tool_stats['total_tools']} available={tool_stats['available_tools']}")
+    
+    # Layer 3: Continuous Learning
+    learning_engine = LearningEngine(
+        memory=mem,
+        storage_path=ROOT_DIR / "data" / "learning_patterns.json"
+    )
+    learning_stats = learning_engine.get_statistics()
+    logger.info(f"🧠 LearningEngine ready. patterns={learning_stats.get('total_patterns', 0)}")
+    
+    # Layer 4: Memory Consolidation
+    consolidation_cfg = cfg.get("consolidation", {})
+    consolidation_enabled = bool(consolidation_cfg.get("enabled", True))
+    consolidator = None
+    if consolidation_enabled:
+        consolidator = MemoryConsolidation(
+            memory=mem,
+            ollama=ollama,
+            beliefs=belief_system,
+            consolidation_interval=int(consolidation_cfg.get("interval_hours", 24)) * 3600
+        )
+        consol_stats = consolidator.get_statistics()
+        logger.info(f"💤 MemoryConsolidation ready. consolidations={consol_stats['total_consolidations']}")
+    else:
+        logger.info("💤 MemoryConsolidation disabled.")
+    
+    # Layer 5: Theory of Mind (User Model)
+    user_model_cfg = cfg.get("user_model", {})
+    user_model_enabled = bool(user_model_cfg.get("enabled", True))
+    user_model = None
+    if user_model_enabled:
+        user_model = UserModel(storage_path=ROOT_DIR / "data" / "user_model.json")
+        logger.info(f"🧠 UserModel ready. interactions={user_model._interaction_count}")
+    else:
+        logger.info("🧠 UserModel disabled.")
+    
+    # Layer 7: Proactive Behavior
+    proactive_cfg = cfg.get("proactive", {})
+    proactive_enabled = bool(proactive_cfg.get("enabled", True))
+    proactive = None
+    if proactive_enabled and user_model:
+        proactive = ProactiveBehaviorEngine(user_model=user_model, memory=mem)
+        proactive_stats = proactive.get_statistics()
+        logger.info(f"🚀 ProactiveBehavior ready. triggers={len(proactive._triggers)}")
+    else:
+        logger.info("🚀 ProactiveBehavior disabled.")
+    
+    # Layer 8: Meta-Learning
+    meta_learn_cfg = cfg.get("meta_learning", {})
+    meta_learn_enabled = bool(meta_learn_cfg.get("enabled", True))
+    meta_optimizer = None
+    if meta_learn_enabled:
+        meta_optimizer = MetaOptimizer(storage_path=ROOT_DIR / "data" / "meta_learning.json")
+        logger.info(f"🔬 MetaOptimizer ready. tests={len(meta_optimizer._ab_tests)}")
+    else:
+        logger.info("🔬 MetaOptimizer disabled.")
+    
+    # Layer 1: Goal-Oriented Behavior (integrates with heavy tick)
+    goal_oriented = GoalOrientedBehavior(
+        memory=mem,
+        world=world,
+        ollama=ollama,
+        tool_registry=tool_registry,
+        learning_engine=learning_engine,
+        user_model=user_model,
+        memory_dir=ROOT_DIR / "memory",
+    )
+    logger.info(f"🎯 GoalOrientedBehavior ready.")
+    
+    # Layer 0: Fault-Tolerant HeavyTick
+    heavy = FaultTolerantHeavyTick(
+        cfg=cfg,
+        ollama=ollama,
+        world=world,
+        values=values,
+        self_model=self_model,
+        mem=mem,
+        milestones=milestones,
+        log_dir=log_dir,
+        sandbox_dir=ROOT_DIR / "sandbox",
+        strategy=strategy,
+        vector_memory=vector_mem,
+        emotion_engine=emotion_engine,
+        reflection_engine=reflection_engine,
+        narrative_engine=narrative_engine,
+        goal_persistence=goal_persistence,
+        attention_system=attention_system,
         curiosity_engine=curiosity_engine if curiosity_enabled else None,
         self_modification=self_modification,
         belief_system=belief_system,
         contradiction_resolver=contradiction_resolver,
         shell_executor=shell_executor,
-        time_perception=time_perc,  # Stage 22
-        social_layer=social_layer,  # Stage 23
-        meta_cognition=meta_cog,  # Stage 24
+        time_perception=time_perc,
+        social_layer=social_layer,
+        meta_cognition=meta_cog,
+        # NEW: Cognitive architecture components
+        goal_oriented=goal_oriented,
+        tool_registry=tool_registry,
+        learning_engine=learning_engine,
+        user_model=user_model,
+        proactive=proactive,
+        meta_optimizer=meta_optimizer,
     )
+    logger.info("⚡ FaultTolerantHeavyTick initialized.")
 
     ticker = LightTick(cfg=cfg, bus=bus)
 
     api_cfg = cfg.get("api", {})
     api_enabled = api_cfg.get("enabled", True)
+    api_components = {
+        "episodic": mem, "vector_memory": vector_mem, "value_engine": values, "strategy_engine": strategy,
+        "self_model": self_model, "milestones": milestones, "dream_mode": dream, "ollama": ollama,
+        "heavy_tick": heavy, "emotion_engine": emotion_engine, "reflection_engine": reflection_engine,
+        "narrative_engine": narrative_engine, "goal_persistence": goal_persistence, "attention_system": attention_system,
+        "curiosity_engine": curiosity_engine, "self_modification": self_modification,
+        "belief_system": belief_system, "contradiction_resolver": contradiction_resolver,
+        "shell_executor": shell_executor, "time_perception": time_perc, "social_layer": social_layer,
+        "meta_cognition": meta_cog,
+        # NEW components
+        "tool_registry": tool_registry,
+        "learning_engine": learning_engine,
+        "user_model": user_model,
+        "proactive": proactive,
+        "meta_optimizer": meta_optimizer,
+        "goal_oriented": goal_oriented,
+    }
     api = IntrospectionAPI(
         host=api_cfg.get("host", "127.0.0.1"),
         port=int(api_cfg.get("port", 8765)),
-        components={
-            "episodic": mem, "vector_memory": vector_mem, "value_engine": values, "strategy_engine": strategy,
-            "self_model": self_model, "milestones": milestones, "dream_mode": dream, "ollama": ollama,
-            "heavy_tick": heavy, "emotion_engine": emotion_engine, "reflection_engine": reflection_engine,
-            "narrative_engine": narrative_engine, "goal_persistence": goal_persistence, "attention_system": attention_system,
-            "curiosity_engine": curiosity_engine, "self_modification": self_modification,
-            "belief_system": belief_system,
-            "contradiction_resolver": contradiction_resolver,
-            "shell_executor": shell_executor,
-            "time_perception": time_perc,  # Stage 22
-            "social_layer": social_layer,  # Stage 23
-            "meta_cognition": meta_cog,  # Stage 24
-        },
+        components=api_components,
         start_time=start_time,
     )
     if api_enabled:
@@ -428,7 +559,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     mem.add_episode("world.scan", f"Initial scan: {file_count} files", outcome="success", data={"file_count": file_count})
 
     gp_stats = goal_persistence.get_stats()
-    logger.info("=" * 56)
+    logger.info("=" * 72)
     logger.info(f"  World        : {world.summary()}")
     logger.info(f"  Values       : {values.to_prompt_context()}")
     logger.info(f"  Self v{self_model.get_version():<3}    : {self_model.get_identity()['name']}")
@@ -458,9 +589,21 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if meta_cog:
         meta_stats = meta_cog.get_stats()
         logger.info(f"  MetaCog      : insights={meta_stats['total_insights']} calibration={meta_stats['calibration_score']:.2f}")
+    # NEW architecture stats
+    logger.info(f"  🛠️  Tools       : {tool_stats['total_tools']} available")
+    logger.info(f"  🧠 Learning    : {learning_stats.get('total_patterns', 0)} patterns")
+    if consolidator:
+        logger.info(f"  💤 Consolidatn : {'enabled' if consolidation_enabled else 'disabled'}")
+    if user_model:
+        logger.info(f"  🧠 UserModel   : {user_model._interaction_count} interactions")
+    if proactive:
+        logger.info(f"  🚀 Proactive   : {len(proactive._triggers)} triggers")
+    if meta_optimizer:
+        logger.info(f"  🔬 MetaLearn   : {len(meta_optimizer._ab_tests)} A/B tests")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
-    logger.info("=" * 56)
+    logger.info("=" * 72)
+    logger.info("🧠 8-Layer Cognitive Architecture ACTIVE")
     logger.info("Running... (Ctrl+C to stop)")
 
     stop_event = asyncio.Event()
@@ -476,6 +619,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     light_task = asyncio.create_task(ticker.start(), name="light_tick")
     heavy_task = asyncio.create_task(heavy.start(), name="heavy_tick")
     dream_task = asyncio.create_task(_dream_loop(dream, stop_event, logger), name="dream_loop") if dream_enabled else None
+    consolidation_task = asyncio.create_task(_consolidation_loop(consolidator, stop_event, logger), name="consolidation_loop") if (consolidation_enabled and consolidator) else None
 
     await stop_event.wait()
 
@@ -489,6 +633,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     tasks_to_cancel = [light_task, heavy_task]
     if dream_task is not None:
         tasks_to_cancel.append(dream_task)
+    if consolidation_task is not None:
+        tasks_to_cancel.append(consolidation_task)
     for task in tasks_to_cancel:
         task.cancel()
         try:
@@ -499,6 +645,14 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     values.save_weekly_snapshot()
     self_model.save_weekly_snapshot()
     await self_model.check_drift(values)
+    
+    # Save new components
+    if learning_engine:
+        learning_engine.save()
+    if user_model:
+        user_model.save()
+    if meta_optimizer:
+        meta_optimizer.save()
 
     mem.add_episode("system.stop", "Digital Being stopped cleanly", outcome="success")
     vector_mem.close()
@@ -510,7 +664,7 @@ def main() -> None:
     seed = load_yaml(SEED_PATH)
     logger = setup_logging(cfg)
     logger.info("=" * 60)
-    logger.info("  Digital Being — starting up")
+    logger.info("  🧠 Digital Being — 8-Layer Cognitive Architecture")
     logger.info(f"  Version        : {cfg['system']['version']}")
     logger.info(f"  Strategy model : {cfg['ollama']['strategy_model']}")
     logger.info(f"  Embed model    : {cfg['ollama']['embed_model']}")
