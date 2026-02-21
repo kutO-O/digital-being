@@ -1,6 +1,7 @@
 """
 Digital Being — StrategyEngine
 Stage 9: select_goal() accepts optional semantic_ctx for richer LLM context.
+Stage 24: Added emotion_ctx and resume_ctx params.
 """
 
 from __future__ import annotations
@@ -151,11 +152,15 @@ class StrategyEngine:
         world_model:  "WorldModel",
         episodic:     "EpisodicMemory",
         ollama:       "OllamaClient",
-        semantic_ctx: str = "",          # Stage 9: injected by HeavyTick
+        semantic_ctx: str = "",   # Stage 9: injected by HeavyTick
+        emotion_ctx:  str = "",   # Stage 24: emotional state context
+        resume_ctx:   str = "",   # Stage 24: goal persistence resume context
     ) -> dict:
         """
         Select next goal. Max 1 LLM call.
         semantic_ctx: formatted string from VectorMemory search.
+        emotion_ctx:  current emotional state from EmotionEngine.
+        resume_ctx:   interrupted goal resume context from GoalPersistence.
         """
         try:
             forced_type = self._apply_novelty(episodic)
@@ -170,11 +175,15 @@ class StrategyEngine:
                 f"\nВАЖНО: из-за низкой новизны ОБЯЗАТЕЛЬНО используй "
                 f'action_type="{forced_type}".' if forced_type else ""
             )
-            sem_block = f"\n{semantic_ctx}\n" if semantic_ctx else ""
+            sem_block    = f"\n{semantic_ctx}\n" if semantic_ctx else ""
+            em_block     = f"\n{emotion_ctx}\n" if emotion_ctx else ""
+            resume_block = f"\n{resume_ctx}\n" if resume_ctx else ""
 
             prompt = (
                 f"{self.to_prompt_context()}\n"
                 f"{sem_block}"
+                f"{em_block}"
+                f"{resume_block}"
                 f"Текущий режим: {mode}\n"
                 f"Конфликты: exploration_vs_stability={c_expl}, action_vs_caution={c_act}\n"
                 f"{force_note}\n"
