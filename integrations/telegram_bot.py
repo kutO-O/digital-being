@@ -58,13 +58,15 @@ class TelegramBot:
             response = requests.get("http://127.0.0.1:8766/status", timeout=5)
             data = response.json()
             
+            ollama_status = "✅" if data.get('ollama_available') else "❌"
+            
             status_text = (
                 f"🟢 **Система работает**\n\n"
                 f"⏱ Uptime: {data.get('uptime_sec', 0)} сек\n"
                 f"🔄 Ticks: {data.get('tick_count', 0)}\n"
                 f"🧠 Episodes: {data.get('episode_count', 0)}\n"
                 f"🎯 Mode: {data.get('mode', 'unknown')}\n"
-                f"🤖 Ollama: {''✅' if data.get('ollama_available') else '❌'}\n\n"
+                f"🤖 Ollama: {ollama_status}\n\n"
                 f"🎯 Current goal:\n{data.get('current_goal', 'none')}"
             )
             
