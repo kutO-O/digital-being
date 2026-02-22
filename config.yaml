@@ -166,7 +166,7 @@ skills:
 
 # Stage 27: Multi-Agent Communication (Basic)
 multi_agent:
-  enabled: true  # Disabled by default
+  enabled: true
   agent_name: "primary"
   specialization: "general"
   auto_register: true
@@ -176,8 +176,8 @@ multi_agent:
     port: 9000
   
   shared_storage:
-    registry_path: "memory/multi_agent/shared_registry.json"
-    message_storage: "memory/multi_agent/shared_messages"
+    registry_path: "memory/multi_agent/registry.json"
+    message_storage: "memory/multi_agent/messages"
   
   message_processing:
     poll_interval_sec: 2
@@ -196,6 +196,37 @@ multi_agent:
     enabled: true
     auto_share_new: false
     min_confidence: 0.7
+  
+  # ============================================================
+  # 🚀 NEW: Agent Autoscaling
+  # ============================================================
+  autoscaling:
+    enabled: false  # Set to true to enable automatic scaling
+    check_interval_sec: 60  # Check every minute
+    
+    # Scaling thresholds
+    scale_up_threshold: 0.75    # Scale up when avg load > 75%
+    scale_down_threshold: 0.25  # Scale down when avg load < 25%
+    
+    # Cooldown periods (prevent rapid scaling)
+    scale_up_cooldown_sec: 300    # 5 min between scale-ups
+    scale_down_cooldown_sec: 600  # 10 min between scale-downs
+    
+    # Agent limits per specialization
+    min_agents_per_type: 1
+    max_agents_per_type: 5
+    
+    # Health monitoring
+    unhealthy_threshold: 3        # Failed checks before replacement
+    heartbeat_timeout_sec: 120    # 2 min without heartbeat = unhealthy
+    
+    # Resource allocation (ports for new agents)
+    port_ranges:
+      research: [9101, 9150]
+      execution: [9201, 9250]
+      analysis: [9301, 9350]
+      planning: [9401, 9450]
+      testing: [9501, 9550]
 
 # ============================================================
 # Stage 28: Advanced Multi-Agent Coordination
