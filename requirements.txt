@@ -1,6 +1,15 @@
+# Core
 PyYAML>=6.0
 numpy>=1.26.0
 aiohttp>=3.9.0
 lancedb>=0.6.0
 ollama>=0.3.0
 watchdog>=4.0.0
+
+# IntrospectionAPI HTTP server
+fastapi>=0.110.0
+uvicorn>=0.29.0
+websockets>=12.0
+
+# Vector memory embeddings
+sentence-transformers>=2.6.0

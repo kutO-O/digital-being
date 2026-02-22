@@ -22,6 +22,7 @@ Design rules:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -181,7 +182,13 @@ class ReflectionEngine:
             new_principle = new_principle.strip()
             if new_principle:
                 try:
-                    self._self_model.add_principle(new_principle[:500])
+                    loop = asyncio.get_event_loop()
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._self_model.add_principle(new_principle[:500]),
+                        loop
+                    )
+                    # Wait for the coroutine to complete
+                    future.result(timeout=5.0)
                     log.info(
                         f"[ReflectionEngine] New principle added: "
                         f"'{new_principle[:80]}'"
@@ -237,7 +244,6 @@ class ReflectionEngine:
 
         # 3f. Publish event
         try:
-            import asyncio
             loop = asyncio.get_event_loop()
             loop.call_soon_threadsafe(
                 lambda: asyncio.ensure_future(

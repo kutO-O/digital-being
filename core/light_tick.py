@@ -25,6 +25,9 @@ log = logging.getLogger("digital_being.light_tick")
 # Dedicated action logger (logs/actions.log)
 action_log = logging.getLogger("digital_being.actions")
 
+# ROOT_DIR for resolving relative config paths
+_ROOT_DIR = Path(__file__).parent.parent.resolve()
+
 
 class LightTick:
     """
@@ -39,7 +42,13 @@ class LightTick:
         self._cfg          = cfg
         self._bus          = bus
         self._interval     = cfg["ticks"]["light_tick_sec"]
-        self._inbox_path   = Path(cfg["paths"]["inbox"])
+
+        # FIX: разрешаем относительные пути относительно ROOT_DIR
+        inbox_raw = cfg["paths"]["inbox"]
+        self._inbox_path = (
+            Path(inbox_raw) if Path(inbox_raw).is_absolute()
+            else _ROOT_DIR / inbox_raw
+        )
         self._state_path   = Path(cfg["paths"]["state"])
         self._snapshot_dir = Path(cfg["paths"]["snapshots"])
         self._tick_count   = 0

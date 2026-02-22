@@ -18,7 +18,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -34,14 +34,14 @@ log = logging.getLogger("digital_being.self_modification")
 
 # Whitelist: only these keys can be modified
 ALLOWED_KEYS = {
-    "ticks.heavy_tick_sec",           # интервал между тиками
-    "dream.interval_hours",           # интервал Dream Mode
-    "reflection.every_n_ticks",       # как часто рефлексия
-    "narrative.every_n_ticks",        # как часто дневник
-    "curiosity.ask_every_n_ticks",    # как часто генерировать вопросы
-    "curiosity.max_open_questions",   # макс вопросов
-    "attention.min_score",            # порог внимания
-    "attention.top_k",                # топ эпизодов
+    "ticks.heavy_tick_sec",
+    "dream.interval_hours",
+    "reflection.every_n_ticks",
+    "narrative.every_n_ticks",
+    "curiosity.ask_every_n_ticks",
+    "curiosity.max_open_questions",
+    "attention.min_score",
+    "attention.top_k",
 }
 
 # Safety bounds: (min, max) for each key
@@ -56,12 +56,8 @@ SAFETY_BOUNDS = {
     "attention.top_k":              (2, 20),
 }
 
-MAX_HISTORY_SIZE = 50  # keep last 50 modifications
+MAX_HISTORY_SIZE = 50
 
-
-# ────────────────────────────────────────────────────────────────────
-# SelfModificationEngine
-# ────────────────────────────────────────────────────────────────────
 
 class SelfModificationEngine:
     """
@@ -92,16 +88,14 @@ class SelfModificationEngine:
         memory_dir.mkdir(parents=True, exist_ok=True)
         self.load_history()
 
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
     # History management
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
 
     def load_history(self) -> None:
-        """Load modification history from JSON."""
         if not self._history_path.exists():
             log.info("No modification history found. Starting fresh.")
             return
-
         try:
             with self._history_path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -116,16 +110,10 @@ class SelfModificationEngine:
             self._history = []
 
     def _save_history(self) -> None:
-        """Save modification history to JSON (keep last MAX_HISTORY_SIZE)."""
         try:
-            # Trim to last N records
             if len(self._history) > MAX_HISTORY_SIZE:
                 self._history = self._history[-MAX_HISTORY_SIZE:]
-
-            data = {
-                "total_applied": self._total_applied,
-                "history": self._history,
-            }
+            data = {"total_applied": self._total_applied, "history": self._history}
             with self._history_path.open("w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
@@ -134,13 +122,12 @@ class SelfModificationEngine:
     def _add_to_history(
         self,
         key: str,
-        old_value,
-        new_value,
+        old_value: Any,
+        new_value: Any,
         reason: str,
         status: str,
         llm_comment: str = "",
     ) -> None:
-        """Append modification record to history."""
         record = {
             "timestamp": time.time(),
             "timestamp_str": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -156,12 +143,11 @@ class SelfModificationEngine:
             self._total_applied += 1
         self._save_history()
 
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
     # Config access helpers
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
 
     def _load_config(self) -> dict:
-        """Load config.yaml."""
         try:
             with self._config_path.open("r", encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
@@ -181,14 +167,11 @@ class SelfModificationEngine:
             log.error(f"Failed to save config: {e}")
             raise
 
-    def _get_config_value(self, key: str) -> any:
-        """
-        Get value from config using dotted key notation.
-        Example: "ticks.heavy_tick_sec" → config["ticks"]["heavy_tick_sec"]
-        """
+    def _get_config_value(self, key: str) -> Any:
+        """Get value from config using dotted key notation."""
         cfg = self._load_config()
         parts = key.split(".")
-        value = cfg
+        value: Any = cfg
         for part in parts:
             if isinstance(value, dict) and part in value:
                 value = value[part]
@@ -196,61 +179,39 @@ class SelfModificationEngine:
                 return None
         return value
 
-    def _set_config_value(self, key: str, new_value) -> None:
-        """
-        Set value in config using dotted key notation.
-        Example: "ticks.heavy_tick_sec" → config["ticks"]["heavy_tick_sec"] = new_value
-        """
+    def _set_config_value(self, key: str, new_value: Any) -> None:
+        """Set value in config using dotted key notation."""
         cfg = self._load_config()
         parts = key.split(".")
-
-        # Navigate to parent dict
         parent = cfg
         for part in parts[:-1]:
             if part not in parent:
                 parent[part] = {}
             parent = parent[part]
-
-        # Set value
         parent[parts[-1]] = new_value
         self._save_config(cfg)
 
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
     # Core proposal logic
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
 
-    def propose(
+    async def propose(
         self,
         key: str,
-        new_value,
+        new_value: Any,
         reason: str,
     ) -> dict:
         """
         Propose a configuration change.
-
-        Steps:
-          1. Check if key is in whitelist
-          2. Check if new_value is within safety bounds
-          3. LLM verification
-          4. If approved, apply change and notify via EventBus
-
-        Returns:
-          {"status": "approved"|"rejected", "key": ..., "old": ..., "new": ..., "reason": ...}
+        FIX: метод стал async, так как event_bus.publish() — асинхронный и требует await.
         """
         log.info(f"Proposal: {key} = {new_value} (reason: {reason[:80]})")
 
         # Step 1: whitelist check
         if key not in ALLOWED_KEYS:
             log.warning(f"Proposal rejected: key '{key}' not in whitelist.")
-            self._add_to_history(
-                key, None, new_value, reason, "rejected",
-                llm_comment="key_not_allowed"
-            )
-            return {
-                "status": "rejected",
-                "key": key,
-                "reason": "key_not_allowed",
-            }
+            self._add_to_history(key, None, new_value, reason, "rejected", llm_comment="key_not_allowed")
+            return {"status": "rejected", "key": key, "reason": "key_not_allowed"}
 
         # Step 2: safety bounds check
         bounds = SAFETY_BOUNDS.get(key)
@@ -259,30 +220,13 @@ class SelfModificationEngine:
             try:
                 numeric_value = float(new_value)
                 if not (min_val <= numeric_value <= max_val):
-                    log.warning(
-                        f"Proposal rejected: {key} = {new_value} "
-                        f"out of bounds [{min_val}, {max_val}]."
-                    )
-                    self._add_to_history(
-                        key, None, new_value, reason, "rejected",
-                        llm_comment="out_of_bounds"
-                    )
-                    return {
-                        "status": "rejected",
-                        "key": key,
-                        "reason": "out_of_bounds",
-                    }
+                    log.warning(f"Proposal rejected: {key} = {new_value} out of bounds [{min_val}, {max_val}].")
+                    self._add_to_history(key, None, new_value, reason, "rejected", llm_comment="out_of_bounds")
+                    return {"status": "rejected", "key": key, "reason": "out_of_bounds"}
             except ValueError:
                 log.warning(f"Proposal rejected: {key} = {new_value} is not numeric.")
-                self._add_to_history(
-                    key, None, new_value, reason, "rejected",
-                    llm_comment="invalid_type"
-                )
-                return {
-                    "status": "rejected",
-                    "key": key,
-                    "reason": "invalid_type",
-                }
+                self._add_to_history(key, None, new_value, reason, "rejected", llm_comment="invalid_type")
+                return {"status": "rejected", "key": key, "reason": "invalid_type"}
 
         # Get current value
         current_value = self._get_config_value(key)
@@ -292,66 +236,41 @@ class SelfModificationEngine:
 
         if not approved:
             log.info(f"Proposal rejected by LLM: {key} = {new_value}. Comment: {llm_comment}")
-            self._add_to_history(
-                key, current_value, new_value, reason, "rejected",
-                llm_comment=llm_comment
-            )
+            self._add_to_history(key, current_value, new_value, reason, "rejected", llm_comment=llm_comment)
             return {
-                "status": "rejected",
-                "key": key,
-                "old": current_value,
-                "new": new_value,
-                "reason": llm_comment,
+                "status": "rejected", "key": key,
+                "old": current_value, "new": new_value, "reason": llm_comment,
             }
 
         # Step 4: Apply change
         try:
             self._apply(key, new_value)
             log.info(f"Proposal approved and applied: {key} = {new_value}")
-            self._add_to_history(
-                key, current_value, new_value, reason, "approved",
-                llm_comment=llm_comment
-            )
+            self._add_to_history(key, current_value, new_value, reason, "approved", llm_comment=llm_comment)
 
-            # Notify via EventBus
+            # FIX: event_bus.publish() асинхронный, нужен await
             if self._event_bus:
-                self._event_bus.publish(
+                await self._event_bus.publish(
                     "config.modified",
                     {"key": key, "new_value": new_value, "old_value": current_value}
                 )
 
             return {
-                "status": "approved",
-                "key": key,
-                "old": current_value,
-                "new": new_value,
-                "reason": reason,
+                "status": "approved", "key": key,
+                "old": current_value, "new": new_value, "reason": reason,
             }
         except Exception as e:
             log.error(f"Failed to apply modification: {e}")
-            self._add_to_history(
-                key, current_value, new_value, reason, "rejected",
-                llm_comment=f"apply_error: {e}"
-            )
-            return {
-                "status": "rejected",
-                "key": key,
-                "reason": f"apply_error: {e}",
-            }
+            self._add_to_history(key, current_value, new_value, reason, "rejected", llm_comment=f"apply_error: {e}")
+            return {"status": "rejected", "key": key, "reason": f"apply_error: {e}"}
 
     def _verify(
         self,
         key: str,
-        current_value,
-        new_value,
+        current_value: Any,
+        new_value: Any,
         reason: str,
     ) -> tuple[bool, str]:
-        """
-        LLM verification: is this change safe and reasonable?
-
-        Returns:
-          (approved: bool, comment: str)
-        """
         if not self._ollama.is_available():
             log.warning("LLM unavailable for verification — rejecting by default.")
             return False, "llm_unavailable"
@@ -373,35 +292,26 @@ class SelfModificationEngine:
             raw = self._ollama.chat(prompt, system)
             if not raw:
                 return False, "llm_no_response"
-
-            # Parse JSON
             data = self._parse_json(raw)
             if data is None:
                 return False, "llm_invalid_json"
-
-            approved = data.get("approved", False)
-            comment = data.get("comment", "")
-
-            return approved, comment
+            return data.get("approved", False), data.get("comment", "")
         except Exception as e:
             log.error(f"LLM verification failed: {e}")
             return False, f"llm_error: {e}"
 
-    def _apply(self, key: str, new_value) -> None:
-        """Apply change to config.yaml."""
+    def _apply(self, key: str, new_value: Any) -> None:
         self._set_config_value(key, new_value)
         log.info(f"Applied: {key} = {new_value}")
 
     @staticmethod
     def _parse_json(raw: str) -> dict | None:
-        """Parse JSON response from LLM."""
         if not raw:
             return None
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
             pass
-        # Try to extract JSON from text
         start = raw.find("{")
         end = raw.rfind("}")
         if start != -1 and end != -1 and end > start:
@@ -411,34 +321,24 @@ class SelfModificationEngine:
                 pass
         return None
 
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
     # Automatic suggestions
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
 
     def suggest_improvements(
         self,
         reflection_log: list[dict],
         emotion_state: dict,
     ) -> list[dict]:
-        """
-        Generate improvement suggestions based on reflection log and emotion state.
-
-        Returns:
-          list of {"key": str, "value": any, "reason": str}
-
-        LLM generates max 3 suggestions, we return them without applying.
-        """
         if not self._ollama.is_available():
             log.debug("LLM unavailable for suggestions.")
             return []
 
-        # Build context from reflection log (last 5 entries)
         reflection_ctx = "\n".join(
             f"- {r.get('timestamp_str', '?')}: {r.get('insight', '')[:120]}"
             for r in reflection_log[-5:]
         ) if reflection_log else "нет данных"
 
-        # Build emotion context
         emotions = emotion_state.get("emotions", {})
         dominant = emotion_state.get("dominant", ("neutral", 0.0))
         emotion_ctx = (
@@ -472,45 +372,35 @@ class SelfModificationEngine:
             raw = self._ollama.chat(prompt, system)
             if not raw:
                 return []
-
-            # Parse JSON array
             suggestions = self._parse_json(raw)
             if not isinstance(suggestions, list):
                 log.warning("LLM returned non-list for suggestions.")
                 return []
-
-            # Validate suggestions
-            valid = []
-            for s in suggestions:
-                if not isinstance(s, dict):
-                    continue
-                if "key" in s and "value" in s and "reason" in s:
-                    valid.append(s)
-
+            valid = [
+                s for s in suggestions
+                if isinstance(s, dict) and "key" in s and "value" in s and "reason" in s
+            ]
             log.info(f"Generated {len(valid)} improvement suggestions.")
-            return valid[:3]  # max 3
+            return valid[:3]
         except Exception as e:
             log.error(f"suggest_improvements() failed: {e}")
             return []
 
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
     # Periodic trigger
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
 
     def should_suggest(self, tick_count: int) -> bool:
-        """Return True every 50 ticks."""
         return tick_count % 50 == 0 and tick_count > 0
 
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
     # Query interface
-    # ────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────
 
     def get_history(self, limit: int = 10) -> list[dict]:
-        """Get last N modification records."""
         return self._history[-limit:] if self._history else []
 
     def get_stats(self) -> dict:
-        """Get statistics about modifications."""
         approved = sum(1 for r in self._history if r["status"] == "approved")
         rejected = sum(1 for r in self._history if r["status"] == "rejected")
         return {

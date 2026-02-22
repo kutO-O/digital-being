@@ -47,7 +47,7 @@ _MAX_WEEKLY_VERSION_CHANGE = 3
 
 class SelfModel:
     """
-    Stores and evolves the system’s identity.
+    Stores and evolves the system's identity.
 
     Lifecycle:
         sm = SelfModel(bus)
@@ -265,15 +265,22 @@ class SelfModel:
         self._snapshots_dir.mkdir(parents=True, exist_ok=True)
         date_str = time.strftime("%Y-%m-%d")
         out_path = self._snapshots_dir / f"{date_str}.json"
+        tmp_path = out_path.with_suffix(".tmp")
         payload  = {
             "date":    date_str,
             "version": self.get_version(),
             "principles_count": len(self._identity["formed_principles"]),
             "identity": self.get_identity(),
         }
-        with out_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        log.info(f"SelfModel weekly snapshot saved: {out_path.name}")
+        try:
+            with tmp_path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            tmp_path.replace(out_path)
+            log.info(f"SelfModel weekly snapshot saved: {out_path.name}")
+        except OSError as e:
+            log.error(f"SelfModel snapshot save failed: {e}")
+            if tmp_path.exists():
+                tmp_path.unlink()
 
     async def check_drift(self, value_engine: "ValueEngine | None" = None) -> list[str]:
         """
@@ -344,16 +351,22 @@ class SelfModel:
         })
 
     def _save(self) -> None:
+        """Atomically save self_model.json using .tmp + replace() pattern."""
         if self._path is None:
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self._path.with_suffix(".tmp")
         payload = {
             "identity": self._identity,
             "history":  self._history,
         }
         try:
-            with self._path.open("w", encoding="utf-8") as f:
+            with tmp_path.open("w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
+            tmp_path.replace(self._path)  # atomic on POSIX systems
             log.debug(f"SelfModel saved (v{self.get_version()}).")
         except OSError as e:
             log.error(f"SelfModel save failed: {e}")
+            # Clean up tmp file on error
+            if tmp_path.exists():
+                tmp_path.unlink()
