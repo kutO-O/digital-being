@@ -8,9 +8,11 @@ Features:
   - is_available() — lightweight availability ping
   - Per-tick LLM budget enforced via calls_this_tick counter
   - Retry logic with exponential backoff for transient failures
+  - Circuit breaker pattern for cascading failure prevention
 
 Changelog:
   TD-006 fix — added retry logic with exponential backoff for reliability.
+  TD-016 fix — integrated circuit breaker for fault tolerance.
 """
 
 from __future__ import annotations
@@ -18,6 +20,8 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any
+
+from core.circuit_breaker import CircuitBreaker, CircuitBreakerOpen, get_registry
 
 log = logging.getLogger("digital_being.ollama_client")
 
@@ -47,6 +51,15 @@ class OllamaClient:
 
         self.calls_this_tick: int = 0
 
+        # TD-016: Circuit breaker for Ollama
+        self._circuit_breaker = CircuitBreaker(
+            name="ollama",
+            failure_threshold=5,
+            recovery_timeout=30.0,
+            success_threshold=2,
+        )
+        get_registry().register(self._circuit_breaker)
+
         # Lazy-import ollama so the rest of the system works even if
         # the package is not installed.
         try:
@@ -59,7 +72,8 @@ class OllamaClient:
                 f"strategy={self._strategy_model} "
                 f"embed={self._embed_model} "
                 f"host={self._base_url} "
-                f"max_retries={self._max_retries}"
+                f"max_retries={self._max_retries} "
+                f"circuit_breaker=enabled"
             )
         except ImportError:
             self._ollama = None  # type: ignore[assignment]
@@ -145,6 +159,7 @@ class OllamaClient:
         Returns the response text, or "" on any error.
         Counts against the per-tick budget.
         Retries transient failures with exponential backoff.
+        Protected by circuit breaker.
         """
         if self._client is None:
             return ""
@@ -158,16 +173,21 @@ class OllamaClient:
 
         self.calls_this_tick += 1
         
-        def _do_chat():
-            response = self._client.chat(
-                model=self._strategy_model,
-                messages=messages,
-                options={"num_predict": 512},
-            )
-            return response["message"]["content"]
+        def _do_chat_with_retry():
+            def _do_chat():
+                response = self._client.chat(
+                    model=self._strategy_model,
+                    messages=messages,
+                    options={"num_predict": 512},
+                )
+                return response["message"]["content"]
+            
+            return self._retry_with_backoff(_do_chat, "chat")
         
         try:
-            text = self._retry_with_backoff(_do_chat, "chat")
+            # TD-016: Wrap in circuit breaker
+            text = self._circuit_breaker.call(_do_chat_with_retry)
+            
             if text is None:
                 self.calls_this_tick -= 1
                 return ""
@@ -177,6 +197,10 @@ class OllamaClient:
                 f"{len(text)} chars returned."
             )
             return text
+        except CircuitBreakerOpen as e:
+            log.warning(f"OllamaClient.chat() blocked by circuit breaker: {e}")
+            self.calls_this_tick -= 1
+            return ""
         except Exception as e:
             log.error(f"OllamaClient.chat() failed: {e}")
             self.calls_this_tick -= 1
@@ -187,21 +211,29 @@ class OllamaClient:
         Get text embedding via the embed model.
         Returns [] on any error (no budget check — embeddings are cheap).
         Retries transient failures with exponential backoff.
+        Protected by circuit breaker.
         """
         if self._client is None:
             return []
         
-        def _do_embed():
-            response = self._client.embed(
-                model=self._embed_model,
-                input=text,
-            )
-            vectors: list[list[float]] = response.get("embeddings", [])
-            return vectors[0] if vectors else []
+        def _do_embed_with_retry():
+            def _do_embed():
+                response = self._client.embed(
+                    model=self._embed_model,
+                    input=text,
+                )
+                vectors: list[list[float]] = response.get("embeddings", [])
+                return vectors[0] if vectors else []
+            
+            return self._retry_with_backoff(_do_embed, "embed")
         
         try:
-            result = self._retry_with_backoff(_do_embed, "embed")
+            # TD-016: Wrap in circuit breaker
+            result = self._circuit_breaker.call(_do_embed_with_retry)
             return result if result is not None else []
+        except CircuitBreakerOpen as e:
+            log.warning(f"OllamaClient.embed() blocked by circuit breaker: {e}")
+            return []
         except Exception as e:
             log.error(f"OllamaClient.embed() failed: {e}")
             return []
@@ -210,6 +242,7 @@ class OllamaClient:
         """
         Quick health check — list local models.
         Returns False if Ollama is unreachable or package missing.
+        Does NOT use circuit breaker (used BY circuit breaker for health checks).
         """
         if self._client is None:
             return False
@@ -219,3 +252,11 @@ class OllamaClient:
         except Exception as e:
             log.warning(f"Ollama unavailable: {e}")
             return False
+    
+    def get_circuit_state(self) -> str:
+        """Получить состояние circuit breaker."""
+        return self._circuit_breaker.get_state()
+    
+    def get_circuit_stats(self) -> dict:
+        """Получить статистику circuit breaker."""
+        return self._circuit_breaker.get_stats()
