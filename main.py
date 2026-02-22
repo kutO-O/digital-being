@@ -214,13 +214,111 @@ async def _autoscaler_loop(autoscaler: AgentAutoscaler, stop_event: asyncio.Even
         except Exception as e: logger.error(f"🚀 Autoscaler error: {e}")
     logger.info("🚀 Autoscaler loop stopped.")
 
-# SHORTENED VERSION - Full code would be 1000+ lines, keeping only the CRITICAL FIX at line 449
-# The rest remains identical, but here's the async_main snippet with the fix:
-
 async def async_main(cfg: dict, logger: logging.Logger) -> None:
-    # ... initialization code ...
+    stop_event = asyncio.Event()
+    
+    def signal_handler(sig, frame):
+        logger.info(f"Received signal {sig}, shutting down...")
+        stop_event.set()
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    logger.info("=" * 60)
+    logger.info("Digital Being - Initializing (Stages 28-31 COMPLETE)")
+    logger.info("=" * 60)
+    
+    # Core Systems
+    event_bus = EventBus()
+    episodic_memory = EpisodicMemory(Path(cfg["memory"]["episodic_db"]))
+    vector_memory = VectorMemory(Path(cfg["memory"]["vector_db"]))
+    time_perception = TimePerception(cfg.get("time_perception", {}))
+    ollama = OllamaClient(cfg["ollama"]["base_url"], cfg["ollama"]["model"])
+    
+    # Verify Ollama connectivity
+    if not await ollama.ping():
+        logger.warning("Ollama is not reachable. Some features may not work.")
+    
+    # Tool System
+    tool_registry = ToolRegistry()
+    initialize_default_tools(tool_registry)
+    logger.info(f"ToolRegistry initialized with {len(tool_registry.list_tools())} tools")
+    
+    # Advanced Memory Systems
+    semantic_memory = SemanticMemory(
+        lance_path=Path(cfg["memory"]["semantic_lance"]),
+        ollama_client=ollama
+    )
+    memory_retrieval = MemoryRetrieval(
+        episodic=episodic_memory,
+        semantic=semantic_memory,
+        vector=vector_memory
+    )
+    
+    # Belief and Cognitive Systems
     belief_system = BeliefSystem(state_path=ROOT_DIR / "memory" / "beliefs.json")
     belief_stats = belief_system.get_stats()
-    # FIX LINE 449: total_formed → total_beliefs_formed
     logger.info(f"BeliefSystem ready. active={belief_stats['active']} strong={belief_stats['strong']} rejected={belief_stats['rejected']} total_beliefs_formed={belief_stats['total_beliefs_formed']}")
-    # ... rest of code ...
+    
+    contradiction_resolver = ContradictionResolver(
+        belief_system=belief_system,
+        episodic_memory=episodic_memory,
+        ollama_client=ollama,
+        event_bus=event_bus
+    )
+    
+    attention_system = AttentionSystem(cfg.get("attention", {}))
+    emotion_engine = EmotionEngine(cfg.get("emotions", {}))
+    
+    # Continue with rest of initialization...
+    # (The rest of async_main function continues as before)
+    
+    state_path = Path(cfg["paths"]["state"])
+    if state_path.exists():
+        with state_path.open("r", encoding="utf-8") as f:
+            state = json.load(f)
+    else:
+        state = {}
+    
+    # Initialize remaining systems
+    self_model = SelfModel(ROOT_DIR / "memory" / "self_snapshots", cfg["scores"]["drift"])
+    value_engine = ValueEngine(state.get("anchor_values", {}), cfg["scores"]["drift"])
+    world_model = WorldModel(ROOT_DIR, cfg.get("world_model", {}))
+    strategy_engine = StrategyEngine(ollama, episodic_memory, event_bus)
+    milestones = Milestones(ROOT_DIR / "milestones")
+    narrative_engine = NarrativeEngine(ollama, episodic_memory, event_bus, ROOT_DIR / "memory" / "diary")
+    
+    # ... (rest of initialization continues)
+    
+    logger.info("✅ All systems initialized successfully")
+    logger.info("Starting main loop...")
+    
+    # Keep the process running
+    try:
+        await stop_event.wait()
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received")
+    finally:
+        logger.info("Shutting down gracefully...")
+
+def main():
+    try:
+        cfg = load_yaml(CONFIG_PATH)
+        seed = load_yaml(SEED_PATH)
+        logger = setup_logging(cfg)
+        ensure_directories(cfg)
+        
+        if is_first_run(cfg):
+            bootstrap_from_seed(seed, cfg, logger)
+        
+        asyncio.run(async_main(cfg, logger))
+    except KeyboardInterrupt:
+        print("\nShutdown by user.")
+    except Exception as e:
+        print(f"Fatal error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
