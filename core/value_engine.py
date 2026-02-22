@@ -191,10 +191,17 @@ class ValueEngine:
         self._drift_dir.mkdir(parents=True, exist_ok=True)
         date_str = time.strftime("%Y-%m-%d")
         out_path = self._drift_dir / f"{date_str}.json"
+        tmp_path = out_path.with_suffix(".tmp")
         payload  = {"date": date_str, "scores": self.snapshot(), "mode": self.get_mode()}
-        with out_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        log.info(f"Weekly drift snapshot saved: {out_path.name}")
+        try:
+            with tmp_path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+            tmp_path.replace(out_path)
+            log.info(f"Weekly drift snapshot saved: {out_path.name}")
+        except OSError as e:
+            log.error(f"Failed to save weekly snapshot: {e}")
+            if tmp_path.exists():
+                tmp_path.unlink()
 
     def check_drift(self) -> list[str]:
         target_date   = time.strftime("%Y-%m-%d", time.localtime(time.time() - 7 * 86400))
@@ -253,13 +260,18 @@ class ValueEngine:
 
     # ─ Persistence ─────────────────────────────────────────────────────
     def _persist_state(self) -> None:
+        """Atomically persist scores to state.json using .tmp + replace()."""
         if self._state_path is None or not self._state_path.exists():
             return
+        tmp_path = self._state_path.with_suffix(".tmp")
         try:
             with self._state_path.open("r", encoding="utf-8") as f:
                 state = json.load(f)
             state["scores"] = self.snapshot()
-            with self._state_path.open("w", encoding="utf-8") as f:
+            with tmp_path.open("w", encoding="utf-8") as f:
                 json.dump(state, f, ensure_ascii=False, indent=2)
+            tmp_path.replace(self._state_path)  # atomic
         except (json.JSONDecodeError, OSError) as e:
-            log.error(f"[_persist_state] Could not write state.json: {e}")
+            log.error(f"[_persist_state] Failed to write state.json: {e}")
+            if tmp_path.exists():
+                tmp_path.unlink()
