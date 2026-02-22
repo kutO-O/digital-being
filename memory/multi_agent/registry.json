@@ -1,446 +1,6 @@
 {
-  "primary_1771719527": {
-    "agent_id": "primary_1771719527",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771719527.083511,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771719744": {
-    "agent_id": "primary_1771719744",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771719744.6201937,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771719973": {
-    "agent_id": "primary_1771719973",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771719973.3201158,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771720113": {
-    "agent_id": "primary_1771720113",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771720113.5182762,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771720364": {
-    "agent_id": "primary_1771720364",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771720364.6332078,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771720545": {
-    "agent_id": "primary_1771720545",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771720545.9084146,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771720833": {
-    "agent_id": "primary_1771720833",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771720833.9974837,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771720862": {
-    "agent_id": "primary_1771720862",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771720862.4196205,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771720933": {
-    "agent_id": "primary_1771720933",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771720933.5160728,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771720994": {
-    "agent_id": "primary_1771720994",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771720994.9848878,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771721092": {
-    "agent_id": "secondary_1771721092",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771721092.583196,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "primary_1771721323": {
-    "agent_id": "primary_1771721323",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771721323.0876667,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771721654": {
-    "agent_id": "secondary_1771721654",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771721654.0170693,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771721797": {
-    "agent_id": "secondary_1771721797",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771721797.28475,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771721985": {
-    "agent_id": "secondary_1771721985",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771721985.0620892,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771722065": {
-    "agent_id": "secondary_1771722065",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771722065.095302,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "primary_1771722098": {
-    "agent_id": "primary_1771722098",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771722098.259815,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771722179": {
-    "agent_id": "primary_1771722179",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771722179.6854146,
-    "capabilities": [
-      "general"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771722302": {
-    "agent_id": "secondary_1771722302",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771722302.9650805,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771722370": {
-    "agent_id": "secondary_1771722370",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771722370.3041375,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771722399": {
-    "agent_id": "secondary_1771722399",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771722399.84609,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771722403": {
-    "agent_id": "secondary_1771722403",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771722403.7585413,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771722421": {
-    "agent_id": "secondary_1771722421",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771722421.0820425,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "secondary_1771722435": {
-    "agent_id": "secondary_1771722435",
-    "name": "secondary",
-    "specialization": "analysis",
-    "host": "localhost",
-    "port": 9001,
-    "status": "online",
-    "last_heartbeat": 1771722435.4408007,
-    "capabilities": [
-      "analysis"
-    ],
-    "load": 0.0
-  },
-  "primary_1771763331": {
-    "agent_id": "primary_1771763331",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771763331.7035744,
-    "capabilities": [
-      "monitoring",
-      "consensus_building",
-      "task_delegation",
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771763518": {
-    "agent_id": "primary_1771763518",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771763518.8158054,
-    "capabilities": [
-      "consensus_building",
-      "general",
-      "monitoring",
-      "task_delegation"
-    ],
-    "load": 0.0
-  },
-  "primary_1771763716": {
-    "agent_id": "primary_1771763716",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771763717.0087087,
-    "capabilities": [
-      "consensus_building",
-      "task_delegation",
-      "general",
-      "monitoring"
-    ],
-    "load": 0.0
-  },
-  "primary_1771764013": {
-    "agent_id": "primary_1771764013",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771764013.9815452,
-    "capabilities": [
-      "general",
-      "task_delegation",
-      "consensus_building",
-      "monitoring"
-    ],
-    "load": 0.0
-  },
-  "primary_1771764260": {
-    "agent_id": "primary_1771764260",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771764260.327562,
-    "capabilities": [
-      "general",
-      "task_delegation",
-      "consensus_building",
-      "monitoring"
-    ],
-    "load": 0.0
-  },
-  "primary_1771764396": {
-    "agent_id": "primary_1771764396",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771764396.93619,
-    "capabilities": [
-      "task_delegation",
-      "monitoring",
-      "general",
-      "consensus_building"
-    ],
-    "load": 0.0
-  },
-  "primary_1771764462": {
-    "agent_id": "primary_1771764462",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771764462.9324024,
-    "capabilities": [
-      "consensus_building",
-      "task_delegation",
-      "monitoring",
-      "general"
-    ],
-    "load": 0.0
-  },
-  "primary_1771765414": {
-    "agent_id": "primary_1771765414",
-    "name": "primary",
-    "specialization": "general",
-    "host": "localhost",
-    "port": 9000,
-    "status": "online",
-    "last_heartbeat": 1771765414.861783,
-    "capabilities": [
-      "consensus_building",
-      "general",
-      "task_delegation",
-      "monitoring"
-    ],
-    "load": 0.0
-  },
-  "primary_1771765640": {
-    "agent_id": "primary_1771765640",
+  "primary_agent": {
+    "agent_id": "primary_agent",
     "name": "primary",
     "specialization": "general",
     "host": "localhost",
@@ -448,10 +8,85 @@
     "status": "online",
     "last_heartbeat": 1771765640.4199922,
     "capabilities": [
-      "task_delegation",
-      "general",
       "consensus_building",
+      "general",
+      "task_delegation",
       "monitoring"
+    ],
+    "load": 0.0
+  },
+  "researcher_agent": {
+    "agent_id": "researcher_agent",
+    "name": "researcher",
+    "specialization": "research",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771765640.4199922,
+    "capabilities": [
+      "web_search",
+      "data_analysis",
+      "information_gathering"
+    ],
+    "load": 0.0
+  },
+  "executor_agent": {
+    "agent_id": "executor_agent",
+    "name": "executor",
+    "specialization": "execution",
+    "host": "localhost",
+    "port": 9002,
+    "status": "online",
+    "last_heartbeat": 1771765640.4199922,
+    "capabilities": [
+      "python_execute",
+      "file_write",
+      "shell_execute"
+    ],
+    "load": 0.0
+  },
+  "analyst_agent": {
+    "agent_id": "analyst_agent",
+    "name": "analyst",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9003,
+    "status": "online",
+    "last_heartbeat": 1771765640.4199922,
+    "capabilities": [
+      "data_analysis",
+      "pattern_recognition",
+      "reporting"
+    ],
+    "load": 0.0
+  },
+  "planner_agent": {
+    "agent_id": "planner_agent",
+    "name": "planner",
+    "specialization": "planning",
+    "host": "localhost",
+    "port": 9004,
+    "status": "online",
+    "last_heartbeat": 1771765640.4199922,
+    "capabilities": [
+      "strategic_planning",
+      "goal_setting",
+      "task_breakdown"
+    ],
+    "load": 0.0
+  },
+  "tester_agent": {
+    "agent_id": "tester_agent",
+    "name": "tester",
+    "specialization": "testing",
+    "host": "localhost",
+    "port": 9005,
+    "status": "online",
+    "last_heartbeat": 1771765640.4199922,
+    "capabilities": [
+      "testing",
+      "validation",
+      "quality_assurance"
     ],
     "load": 0.0
   }
