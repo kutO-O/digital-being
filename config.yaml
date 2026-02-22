@@ -8,6 +8,7 @@ ticks:
 memory:
   episodic_db: "memory/episodes.db"
   semantic_lance: "memory/semantic.lance"
+  vector_db: "memory/vector.db"
   max_episodes: 10000
 
 paths:
