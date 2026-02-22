@@ -982,8 +982,8 @@ def main() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(asyncio.Event().set()))
+    # for sig in (signal.SIGINT, signal.SIGTERM):
+    #     loop.add_signal_handler(sig, lambda: asyncio.create_task(asyncio.Event().set()))
     
     try:
         loop.run_until_complete(async_main(cfg, logger))
