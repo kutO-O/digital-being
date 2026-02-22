@@ -12,11 +12,13 @@ Design rules:
   - check_same_thread=False for asyncio compatibility
   - All writes are validated before touching the DB
   - Errors never crash the caller — they are logged and skipped
+  - Automatic archival prevents unbounded growth
 
 Changelog:
   Stage 8 — added get_episodes_by_type() for reflect action and StrategyEngine novelty.
   API Fix — added count() method for IntrospectionAPI compatibility.
   Perf Fix — added missing indexes for 5-10x query speedup (TD-009).
+  TD-008 fix — added archive_old_episodes() to prevent unbounded growth.
 """
 
 from __future__ import annotations
@@ -46,6 +48,9 @@ class EpisodicMemory:
         mem = EpisodicMemory(db_path)
         mem.init()          # call once at startup
         mem.add_episode(...)
+        
+        # Periodic maintenance (call from heavy tick every ~24 hours)
+        archived = mem.archive_old_episodes(days=90)
     """
 
     def __init__(self, db_path: Path) -> None:
@@ -370,6 +375,106 @@ class EpisodicMemory:
         except sqlite3.Error as e:
             log.error(f"[get_active_principles] DB error: {e}")
             return []
+
+    # ──────────────────────────────────────────────────────────────
+    # Maintenance (TD-008 fix)
+    # ──────────────────────────────────────────────────────────────
+    def archive_old_episodes(self, days: int = 90) -> int:
+        """
+        Archive episodes older than N days to separate monthly database.
+        
+        This prevents the main DB from growing unbounded while preserving
+        all historical data in monthly archive files.
+        
+        Args:
+            days: Archive episodes older than this many days (default 90)
+        
+        Returns:
+            Number of episodes archived and deleted from main DB
+        
+        Archives are stored in memory/archives/ with names like:
+            episodic_archive_2026_02.db
+        
+        Call this periodically (e.g. once per week / ~168 heavy ticks)
+        to keep the main database fast.
+        """
+        cutoff = time.strftime(
+            "%Y-%m-%dT%H:%M:%S",
+            time.localtime(time.time() - days * 86400)
+        )
+        
+        try:
+            # Count episodes to archive
+            count_row = self._conn.execute(
+                "SELECT COUNT(*) as cnt FROM episodes WHERE timestamp < ?",
+                (cutoff,)
+            ).fetchone()
+            to_archive = count_row["cnt"] if count_row else 0
+            
+            if to_archive == 0:
+                log.debug(f"No episodes older than {days} days to archive")
+                return 0
+            
+            # Create archive directory
+            archive_dir = self._db_path.parent / "archives"
+            archive_dir.mkdir(exist_ok=True)
+            
+            # Archive filename based on current month
+            month_str = time.strftime("%Y_%m")
+            archive_path = archive_dir / f"episodic_archive_{month_str}.db"
+            
+            # Open or create archive DB
+            archive_conn = sqlite3.connect(str(archive_path))
+            archive_conn.row_factory = sqlite3.Row
+            
+            # Create tables in archive if needed
+            archive_conn.executescript("""
+                CREATE TABLE IF NOT EXISTS episodes (
+                    id            INTEGER PRIMARY KEY,
+                    timestamp     TEXT    NOT NULL,
+                    event_type    TEXT    NOT NULL,
+                    description   TEXT    NOT NULL,
+                    outcome       TEXT    NOT NULL DEFAULT 'unknown',
+                    data          TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_episodes_timestamp
+                    ON episodes(timestamp);
+            """)
+            
+            # Copy old episodes to archive
+            rows = self._conn.execute(
+                "SELECT * FROM episodes WHERE timestamp < ?",
+                (cutoff,)
+            ).fetchall()
+            
+            for row in rows:
+                archive_conn.execute(
+                    "INSERT OR IGNORE INTO episodes VALUES (?, ?, ?, ?, ?, ?)",
+                    tuple(row)
+                )
+            
+            archive_conn.commit()
+            archive_conn.close()
+            
+            # Delete from main DB
+            self._conn.execute(
+                "DELETE FROM episodes WHERE timestamp < ?",
+                (cutoff,)
+            )
+            
+            # Reclaim disk space
+            log.info(f"Running VACUUM to reclaim space...")
+            self._conn.execute("VACUUM")
+            
+            log.info(
+                f"Archived {to_archive} episodes older than {days} days "
+                f"to {archive_path.name}"
+            )
+            return to_archive
+            
+        except sqlite3.Error as e:
+            log.error(f"[archive_old_episodes] DB error: {e}")
+            return 0
 
     # ──────────────────────────────────────────────────────────────
     # Health check
