@@ -1,6 +1,6 @@
 """
 Digital Being - Multi-Agent Coordinator
-Stage 27: Coordinates multi-agent communication and collaboration.
+Stage 27-28: Coordinates multi-agent communication and collaboration with advanced features.
 """
 
 from __future__ import annotations
@@ -16,6 +16,11 @@ from core.message_broker import MessageBroker
 from core.message_protocol import Message, MessageBuilder, MessageType, Priority
 from core.skill_exchange import SkillExchange
 
+# Stage 28 imports
+from core.multi_agent.task_delegation import TaskDelegation
+from core.multi_agent.consensus_builder import ConsensusBuilder
+from core.multi_agent.agent_roles import AgentRoleManager, AgentRole
+
 if TYPE_CHECKING:
     from core.skill_library import SkillLibrary
 
@@ -23,7 +28,7 @@ log = logging.getLogger("digital_being.multi_agent")
 
 
 class MultiAgentCoordinator:
-    """Coordinates multi-agent communication and collaboration."""
+    """Coordinates multi-agent communication and collaboration with advanced features."""
     
     def __init__(
         self,
@@ -62,6 +67,14 @@ class MultiAgentCoordinator:
         self._broker = MessageBroker(agent_id, message_storage)
         self._skill_exchange = SkillExchange(agent_id, skill_library, self._broker)
         
+        # Stage 28: Advanced features
+        self._task_delegation = TaskDelegation(agent_id, self._broker, self._storage_dir)
+        self._consensus_builder = ConsensusBuilder(agent_id, self._broker, self._storage_dir)
+        self._role_manager = AgentRoleManager(agent_id, self._storage_dir)
+        
+        # Assign default role based on specialization
+        self._assign_default_role()
+        
         # Register self in registry
         if config.get("auto_register", True):
             self._register_self()
@@ -76,8 +89,28 @@ class MultiAgentCoordinator:
         self._consensus_votes: dict[str, dict] = {}  # msg_id -> {question, options, votes}
         
         log.info(
-            f"MultiAgentCoordinator initialized: {agent_name} ({agent_id}) - {specialization}"
+            f"MultiAgentCoordinator initialized: {agent_name} ({agent_id}) - {specialization} "
+            f"[Role: {self._role_manager.get_current_role().get('name', 'None') if self._role_manager.get_current_role() else 'None'}]"
         )
+    
+    def _assign_default_role(self):
+        """Assign default role based on specialization."""
+        role_mapping = {
+            "research": AgentRole.RESEARCHER,
+            "analysis": AgentRole.ANALYST,
+            "planning": AgentRole.PLANNER,
+            "execution": AgentRole.EXECUTOR,
+            "testing": AgentRole.TESTER,
+            "documentation": AgentRole.DOCUMENTER,
+        }
+        
+        for key, role in role_mapping.items():
+            if key in self._specialization.lower():
+                self._role_manager.assign_role(role)
+                return
+        
+        # Default to coordinator
+        self._role_manager.assign_role(AgentRole.COORDINATOR)
     
     def _register_self(self):
         """Register this agent in the network."""
@@ -94,6 +127,10 @@ class MultiAgentCoordinator:
     def _get_capabilities(self) -> list[str]:
         """Get list of agent capabilities."""
         capabilities = [self._specialization]
+        
+        # Add role-based capabilities
+        role_caps = self._role_manager.get_capabilities()
+        capabilities.extend(role_caps)
         
         # Add skill-based capabilities
         for skill in self._skill_library._skills:
@@ -154,38 +191,78 @@ class MultiAgentCoordinator:
         to_agent: Optional[str] = None,
         priority: Priority = Priority.NORMAL
     ) -> str:
-        """Delegate a task to another agent."""
-        # Find best agent if not specified
-        if not to_agent:
-            task_type = context.get("type", "general") if context else "general"
-            agent_info = self._registry.get_best_for_task(task_type)
-            if not agent_info:
-                log.warning(f"No suitable agent found for task type: {task_type}")
-                return ""
-            to_agent = agent_info.agent_id
+        """Delegate a task to another agent using advanced delegation system."""
+        # Extract task type and required capabilities
+        task_type = context.get("type", "general") if context else "general"
+        required_caps = context.get("required_capabilities", []) if context else []
         
-        # Create task message
-        message = MessageBuilder.delegate_task(
-            from_agent=self._agent_id,
-            to_agent=to_agent,
-            task_description=task,
-            context=context,
-            priority=priority
+        # Create task using TaskDelegation system
+        task_obj = self._task_delegation.create_task(
+            title=task,
+            description=context.get("description", task) if context else task,
+            required_capabilities=required_caps,
+            priority=priority.value,
+            deadline=context.get("deadline") if context else None
         )
         
-        msg_id = self._broker.send(message)
-        self._broker._save_to_disk()  # Persist immediately
+        # Find best agent if not specified
+        if not to_agent:
+            # Try to find agent with matching role
+            online_agents = self._registry.get_all_online()
+            best_agent = None
+            best_score = 0
+            
+            for agent_info in online_agents:
+                if agent_info.agent_id == self._agent_id:
+                    continue
+                
+                # Score based on capabilities match
+                matching_caps = set(required_caps) & set(agent_info.capabilities)
+                score = len(matching_caps)
+                
+                if score > best_score:
+                    best_score = score
+                    best_agent = agent_info.agent_id
+            
+            if not best_agent:
+                # Fallback to general task matching
+                agent_info = self._registry.get_best_for_task(task_type)
+                if agent_info:
+                    best_agent = agent_info.agent_id
+            
+            if not best_agent:
+                log.warning(f"No suitable agent found for task: {task}")
+                return ""
+            
+            to_agent = best_agent
         
-        # Track delegated task
-        self._delegated_tasks[msg_id] = {
-            "task": task,
-            "to_agent": to_agent,
-            "status": "pending",
-            "context": context
-        }
+        # Delegate task
+        success = self._task_delegation.delegate_task(task_obj, to_agent)
         
-        log.info(f"Delegated task to {to_agent}: {task}")
-        return msg_id
+        if success:
+            # Also send via message broker for immediate notification
+            message = MessageBuilder.delegate_task(
+                from_agent=self._agent_id,
+                to_agent=to_agent,
+                task_description=task,
+                context=context,
+                priority=priority
+            )
+            msg_id = self._broker.send(message)
+            self._broker._save_to_disk()
+            
+            # Track delegated task
+            self._delegated_tasks[task_obj["id"]] = {
+                "task": task,
+                "to_agent": to_agent,
+                "status": "delegated",
+                "context": context
+            }
+            
+            log.info(f"Delegated task to {to_agent}: {task}")
+            return task_obj["id"]
+        
+        return ""
     
     def share_skill(self, skill_id: str, to_agent: str = "*") -> Optional[str]:
         """Share a skill with other agent(s)."""
@@ -209,9 +286,24 @@ class MultiAgentCoordinator:
         self,
         question: str,
         options: list[str],
-        timeout: int = 30
+        timeout: int = 30,
+        requires_majority: bool = True
     ) -> Optional[str]:
-        """Request consensus vote from all agents."""
+        """Request consensus vote from all agents using ConsensusBuilder."""
+        # Create proposal
+        proposal = self._consensus_builder.create_proposal(
+            title=question,
+            description=question,
+            options=options,
+            voting_period=timeout,
+            requires_majority=requires_majority
+        )
+        
+        # Broadcast to all online agents
+        online_agents = [a.agent_id for a in self._registry.get_all_online()]
+        self._consensus_builder.broadcast_proposal(proposal, online_agents)
+        
+        # Also send via message broker
         message = MessageBuilder.consensus_request(
             from_agent=self._agent_id,
             question=question,
@@ -220,10 +312,11 @@ class MultiAgentCoordinator:
         )
         
         msg_id = self._broker.send(message)
-        self._broker._save_to_disk()  # Persist immediately
+        self._broker._save_to_disk()
         
         # Initialize vote tracking
         self._consensus_votes[msg_id] = {
+            "proposal": proposal,
             "question": question,
             "options": options,
             "votes": {},
@@ -234,35 +327,34 @@ class MultiAgentCoordinator:
         await asyncio.sleep(timeout)
         
         # Tally votes
-        return self._tally_votes(msg_id)
+        return self._tally_votes_advanced(msg_id)
     
-    def _tally_votes(self, consensus_id: str) -> Optional[str]:
-        """Tally votes and determine consensus."""
+    def _tally_votes_advanced(self, consensus_id: str) -> Optional[str]:
+        """Tally votes using ConsensusBuilder."""
         if consensus_id not in self._consensus_votes:
             return None
         
         consensus_data = self._consensus_votes[consensus_id]
+        proposal = consensus_data["proposal"]
         votes = consensus_data["votes"]
         
-        if not votes:
-            log.warning(f"No votes received for consensus: {consensus_id[:8]}")
-            return None
+        # Update proposal votes
+        proposal["votes"] = votes
         
-        # Count votes
-        tally = {}
-        for agent_id, choice in votes.items():
-            tally[choice] = tally.get(choice, 0) + 1
+        # Tally
+        tally = self._consensus_builder.tally_votes(proposal)
         
-        # Get winner
-        winner = max(tally, key=tally.get)
+        # Finalize
+        result = self._consensus_builder.finalize_proposal(proposal, tally)
         
-        log.info(
-            f"Consensus reached: '{winner}' ({tally[winner]}/{len(votes)} votes) "
-            f"for question: {consensus_data['question']}"
-        )
+        log.info(f"Consensus reached: {result} for '{consensus_data['question']}'")
         
-        consensus_data["result"] = winner
-        return winner
+        consensus_data["result"] = result
+        return result
+    
+    def _tally_votes(self, consensus_id: str) -> Optional[str]:
+        """Legacy tally method for backwards compatibility."""
+        return self._tally_votes_advanced(consensus_id)
     
     def get_online_agents(self) -> list[AgentInfo]:
         """Get list of all online agents."""
@@ -296,45 +388,93 @@ class MultiAgentCoordinator:
         
         log.info(f"Received task from {message.from_agent}: {task}")
         
-        # TODO: Execute task based on agent's capabilities
-        # For now, acknowledge
-        status_msg = Message(
-            msg_id=str(uuid.uuid4()),
-            msg_type=MessageType.STATUS,
-            from_agent=self._agent_id,
-            to_agent=message.from_agent,
-            payload={
-                "task_id": message.msg_id,
-                "status": "accepted",
-                "message": "Task accepted and queued"
-            },
-            reply_to=message.msg_id
-        )
-        self._broker.send(status_msg)
-        self._broker._save_to_disk()  # Persist status
+        # Check if suitable for my role
+        task_type = context.get("type", "general")
+        is_suitable = self._role_manager.is_suitable_for_task(task_type)
+        
+        if is_suitable:
+            # Accept task
+            # Extract task object from context if available
+            # For now, create simple task dict
+            task_obj = {
+                "id": message.msg_id,
+                "title": task,
+                "creator": message.from_agent,
+                "status": "pending"
+            }
+            
+            self._task_delegation.accept_task(task_obj)
+            
+            status_msg = Message(
+                msg_id=str(uuid.uuid4()),
+                msg_type=MessageType.STATUS,
+                from_agent=self._agent_id,
+                to_agent=message.from_agent,
+                payload={
+                    "task_id": message.msg_id,
+                    "status": "accepted",
+                    "message": f"Task accepted by {self._role_manager.get_current_role().get('name', self._agent_name)}"
+                },
+                reply_to=message.msg_id
+            )
+            self._broker.send(status_msg)
+            self._broker._save_to_disk()
+        else:
+            # Decline task
+            status_msg = Message(
+                msg_id=str(uuid.uuid4()),
+                msg_type=MessageType.STATUS,
+                from_agent=self._agent_id,
+                to_agent=message.from_agent,
+                payload={
+                    "task_id": message.msg_id,
+                    "status": "declined",
+                    "message": f"Task not suitable for my role ({self._role_manager.get_current_role().get('name', 'unknown')})"
+                },
+                reply_to=message.msg_id
+            )
+            self._broker.send(status_msg)
+            self._broker._save_to_disk()
     
     def _handle_consensus(self, message: Message):
-        """Handle consensus request."""
+        """Handle consensus request with role-aware voting."""
         question = message.payload.get("question")
         options = message.payload.get("options", [])
         
         log.info(f"Consensus request from {message.from_agent}: {question}")
         
-        # TODO: Intelligent voting based on agent's knowledge
-        # For now, vote randomly
+        # Vote based on role expertise
+        # TODO: Intelligent voting based on agent's knowledge and role
+        # For now, vote based on role preference
         import random
         choice = random.choice(options) if options else None
         
+        # Determine vote weight based on expertise
+        weight = 1.0
+        role_info = self._role_manager.get_current_role()
+        if role_info and "strategy" in question.lower() and "planner" in role_info.get("name", "").lower():
+            weight = 1.5  # Higher weight for relevant expertise
+        
         if choice:
+            # Cast vote using ConsensusBuilder
+            proposal_id = message.msg_id
+            self._consensus_builder.cast_vote(
+                proposal_id=proposal_id,
+                vote=choice,
+                weight=weight,
+                reasoning=f"Vote from {role_info.get('name', 'agent') if role_info else 'agent'}"
+            )
+            
+            # Also send via message broker
             vote = MessageBuilder.vote(
                 from_agent=self._agent_id,
                 to_agent=message.from_agent,
                 reply_to=message.msg_id,
                 choice=choice,
-                reasoning="Based on current knowledge"
+                reasoning=f"Based on my role as {role_info.get('name', 'agent') if role_info else 'agent'}"
             )
             self._broker.send(vote)
-            self._broker._save_to_disk()  # Persist vote
+            self._broker._save_to_disk()
     
     def _handle_vote(self, message: Message):
         """Handle incoming vote for consensus."""
@@ -345,8 +485,12 @@ class MultiAgentCoordinator:
         choice = message.payload.get("choice")
         reasoning = message.payload.get("reasoning", "")
         
-        # Record vote
-        self._consensus_votes[consensus_id]["votes"][message.from_agent] = choice
+        # Record vote with weight
+        self._consensus_votes[consensus_id]["votes"][message.from_agent] = {
+            "vote": choice,
+            "weight": message.payload.get("weight", 1.0),
+            "reasoning": reasoning
+        }
         
         log.debug(
             f"Vote received from {message.from_agent}: {choice} ({reasoning})"
@@ -364,14 +508,20 @@ class MultiAgentCoordinator:
             )
     
     def get_stats(self) -> dict:
-        """Get coordinator statistics."""
+        """Get coordinator statistics including Stage 28 features."""
+        role_info = self._role_manager.get_current_role()
+        
         return {
             "agent_id": self._agent_id,
             "agent_name": self._agent_name,
             "specialization": self._specialization,
+            "current_role": role_info.get("name") if role_info else None,
             "registry": self._registry.get_stats(),
             "broker": self._broker.get_stats(),
             "skill_exchange": self._skill_exchange.get_stats(),
+            "task_delegation": self._task_delegation.get_stats(),
+            "consensus_building": self._consensus_builder.get_stats(),
+            "role_stats": self._role_manager.get_all_stats(),
             "delegated_tasks": len(self._delegated_tasks),
             "active_consensus": len(self._consensus_votes)
         }
