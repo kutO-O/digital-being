@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional, Type
-
+from core.tools.web_search_advanced import execute as web_search_advanced
+register_tool("web_search_advanced", "web", web_search_advanced)
 from core.tools.base_tool import BaseTool, ToolCategory, ToolResult
 
 log = logging.getLogger("digital_being.tools.registry")
