@@ -4,6 +4,7 @@ Spawn Multiple Agents
 """
 
 import json
+import time
 from pathlib import Path
 
 def spawn_agents():
@@ -11,44 +12,59 @@ def spawn_agents():
     
     agents_to_create = [
         {
-            "id": "researcher_001",
+            "agent_id": "researcher_001",
             "name": "researcher",
             "specialization": "research",
-            "role": "researcher",
+            "host": "localhost",
+            "port": 9001,
+            "status": "online",
+            "last_heartbeat": time.time(),
             "capabilities": ["web_search", "data_analysis", "information_gathering"],
-            "status": "online"
+            "load": 0.0
         },
         {
-            "id": "executor_001",
+            "agent_id": "executor_001",
             "name": "executor",
             "specialization": "execution",
-            "role": "executor",
+            "host": "localhost",
+            "port": 9002,
+            "status": "online",
+            "last_heartbeat": time.time(),
             "capabilities": ["python_execute", "file_write", "shell_execute"],
-            "status": "online"
+            "load": 0.0
         },
         {
-            "id": "analyst_001",
+            "agent_id": "analyst_001",
             "name": "analyst",
             "specialization": "analysis",
-            "role": "analyst",
+            "host": "localhost",
+            "port": 9003,
+            "status": "online",
+            "last_heartbeat": time.time(),
             "capabilities": ["data_analysis", "pattern_recognition", "reporting"],
-            "status": "online"
+            "load": 0.0
         },
         {
-            "id": "planner_001",
+            "agent_id": "planner_001",
             "name": "planner",
             "specialization": "planning",
-            "role": "planner",
+            "host": "localhost",
+            "port": 9004,
+            "status": "online",
+            "last_heartbeat": time.time(),
             "capabilities": ["strategic_planning", "goal_setting", "task_breakdown"],
-            "status": "online"
+            "load": 0.0
         },
         {
-            "id": "tester_001",
+            "agent_id": "tester_001",
             "name": "tester",
             "specialization": "testing",
-            "role": "tester",
+            "host": "localhost",
+            "port": 9005,
+            "status": "online",
+            "last_heartbeat": time.time(),
             "capabilities": ["testing", "validation", "quality_assurance"],
-            "status": "online"
+            "load": 0.0
         }
     ]
     
@@ -62,33 +78,37 @@ def spawn_agents():
     else:
         registry = {}
     
-    # Убедиться, что есть ключ 'agents'
-    if "agents" not in registry:
-        registry["agents"] = []
+    # Формат системы: {"agent_id": {...data...}}
+    # НЕ массив!
     
     # Добавить новых агентов
     for agent in agents_to_create:
+        agent_id = agent["agent_id"]
+        
         # Проверить, не существует ли уже
-        exists = any(a.get("id") == agent["id"] for a in registry["agents"])
-        if not exists:
-            registry["agents"].append(agent)
-            print(f"✅ Создан агент: {agent['name']} ({agent['role']})")
-        else:
+        if agent_id in registry:
             print(f"⚠️  Агент {agent['name']} уже существует")
+        else:
+            registry[agent_id] = agent
+            print(f"✅ Создан агент: {agent['name']} ({agent['specialization']})")
     
     # Сохранить
     with open(registry_path, "w", encoding="utf-8") as f:
         json.dump(registry, f, indent=2, ensure_ascii=False)
     
-    print(f"\n🎉 Всего агентов в системе: {len(registry['agents'])}")
-    print("\n📊 Роли:")
-    roles = {}
-    for agent in registry["agents"]:
-        role = agent.get("role", "unknown")
-        roles[role] = roles.get(role, 0) + 1
+    print(f"\n🎉 Всего агентов в системе: {len(registry)}")
+    print("\n📊 Агенты:")
     
-    for role, count in roles.items():
-        print(f"  {role}: {count}")
+    specializations = {}
+    for agent_id, agent_data in registry.items():
+        spec = agent_data.get("specialization", "unknown")
+        name = agent_data.get("name", "unknown")
+        specializations[spec] = specializations.get(spec, 0) + 1
+        print(f"  • {name} - {spec}")
+    
+    print("\n📊 Специализации:")
+    for spec, count in specializations.items():
+        print(f"  {spec}: {count}")
 
 if __name__ == "__main__":
     spawn_agents()
