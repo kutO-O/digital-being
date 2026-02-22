@@ -339,46 +339,66 @@ async function loadAgents() {
             return;
         }
         
+        // ✅ FIX: Check if online_agents is array
+        const agents = Array.isArray(data.online_agents) ? data.online_agents : [];
+        
         // Render agent cards
-        const agentsHtml = data.online_agents.map(agent => `
+        const agentsHtml = agents.map(agent => `
             <div class="agent-card">
                 <div class="agent-card-header">
                     <div class="agent-name">🤖 ${agent.name}</div>
-                    <div class="agent-status ${agent.status}">${translateStatus(agent.status)}</div>
+                    <div class="agent-status online">Онлайн</div>
                 </div>
                 <div class="agent-specialization">${translateSpecialization(agent.specialization)}</div>
                 <div class="agent-capabilities">
                     ${agent.capabilities.map(cap => `<span class="capability-tag">${cap}</span>`).join('')}
+                </div>
+                <div style="margin-top: 8px; font-size: 12px; color: #888;">
+                    Загрузка: ${(agent.load * 100).toFixed(0)}%
                 </div>
             </div>
         `).join('');
         
         document.getElementById('agentsGrid').innerHTML = agentsHtml || '<div class="text-muted">Нет агентов онлайн</div>';
         
-        // Render stats
-        const stats = data.stats;
+        // ✅ FIX: Use correct stats fields
+        const stats = data.stats || {};
+        const registry = stats.registry || {};
+        const broker = stats.broker || {};
+        const taskDelegation = stats.task_delegation || {};
+        const consensus = stats.consensus_building || {};
+        
         document.getElementById('agentStats').innerHTML = `
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
                 <div>
-                    <div class="text-muted">Всего сообщений</div>
-                    <div class="metric-value">${stats.total_messages_sent}</div>
-                </div>
-                <div>
-                    <div class="text-muted">Навыков передано</div>
-                    <div class="metric-value">${stats.total_skills_shared}</div>
-                </div>
-                <div>
-                    <div class="text-muted">Коллабораций</div>
-                    <div class="metric-value">${stats.total_collaborations}</div>
+                    <div class="text-muted">Всего агентов</div>
+                    <div class="metric-value">${registry.total_agents || 0}</div>
                 </div>
                 <div>
                     <div class="text-muted">Агентов онлайн</div>
-                    <div class="metric-value">${stats.total_agents_registered}</div>
+                    <div class="metric-value text-success">${agents.length}</div>
+                </div>
+                <div>
+                    <div class="text-muted">Сообщений отправлено</div>
+                    <div class="metric-value">${broker.total_sent || 0}</div>
+                </div>
+                <div>
+                    <div class="text-muted">Задач создано</div>
+                    <div class="metric-value">${taskDelegation.tasks_created || 0}</div>
+                </div>
+                <div>
+                    <div class="text-muted">Предложений</div>
+                    <div class="metric-value">${consensus.proposals_created || 0}</div>
+                </div>
+                <div>
+                    <div class="text-muted">Средняя загрузка</div>
+                    <div class="metric-value">${((registry.avg_load || 0) * 100).toFixed(0)}%</div>
                 </div>
             </div>
         `;
     } catch (error) {
         console.error('Agents load error:', error);
+        document.getElementById('agentsGrid').innerHTML = '<div class="text-error">Ошибка загрузки агентов</div>';
     }
 }
 
@@ -387,7 +407,8 @@ function translateStatus(status) {
         'active': 'Активен',
         'idle': 'Ожидание',
         'busy': 'Занят',
-        'offline': 'Оффлайн'
+        'offline': 'Оффлайн',
+        'online': 'Онлайн'
     };
     return statuses[status] || status;
 }
@@ -398,7 +419,8 @@ function translateSpecialization(spec) {
         'planning': 'Планирование',
         'execution': 'Исполнение',
         'research': 'Исследования',
-        'testing': 'Тестирование'
+        'testing': 'Тестирование',
+        'general': 'Общий'
     };
     return specs[spec] || spec;
 }
