@@ -232,8 +232,16 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     event_bus = EventBus()
     episodic_memory = EpisodicMemory(Path(cfg["memory"]["episodic_db"]))
     vector_memory = VectorMemory(Path(cfg["memory"]["vector_db"]))
-    time_perception = TimePerception(cfg.get("time_perception", {}))
-    ollama = OllamaClient(cfg["ollama"]["base_url"], cfg["ollama"]["model"])
+    
+    # TimePerception needs memory_dir as Path, not config dict
+    time_cfg = cfg.get("time_perception", {})
+    time_perception = TimePerception(
+        memory_dir=ROOT_DIR / "memory",
+        max_patterns=time_cfg.get("max_patterns", 50),
+        min_confidence=time_cfg.get("min_confidence", 0.4)
+    )
+    
+    ollama = OllamaClient(cfg["ollama"]["base_url"], cfg["ollama"]["strategy_model"])
     
     # Verify Ollama connectivity
     if not await ollama.ping():
@@ -271,8 +279,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     emotion_engine = EmotionEngine(cfg.get("emotions", {}))
     
     # Continue with rest of initialization...
-    # (The rest of async_main function continues as before)
-    
     state_path = Path(cfg["paths"]["state"])
     if state_path.exists():
         with state_path.open("r", encoding="utf-8") as f:
@@ -287,8 +293,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     strategy_engine = StrategyEngine(ollama, episodic_memory, event_bus)
     milestones = Milestones(ROOT_DIR / "milestones")
     narrative_engine = NarrativeEngine(ollama, episodic_memory, event_bus, ROOT_DIR / "memory" / "diary")
-    
-    # ... (rest of initialization continues)
     
     logger.info("✅ All systems initialized successfully")
     logger.info("Starting main loop...")
