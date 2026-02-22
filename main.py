@@ -1,6 +1,7 @@
 """
 Digital Being — Entry Point
 Stage 28-30: FINAL INTEGRATION - Advanced Multi-Agent + Memory + Self-Evolution
+Stage 31: Agent Autoscaling
 """
 
 from __future__ import annotations
@@ -45,17 +46,18 @@ from core.skill_library import SkillLibrary
 # Stage 27 - Multi-Agent Communication
 from core.multi_agent_coordinator import MultiAgentCoordinator
 
-# Stage 28 - Advanced Multi-Agent (NEW!)
+# Stage 28 - Advanced Multi-Agent
 from core.multi_agent.task_delegation import TaskDelegation
 from core.multi_agent.consensus_builder import ConsensusBuilder
-from core.multi_agent.agent_roles import AgentRoleManager  # FIX: Changed from AgentRoles
+from core.multi_agent.agent_roles import AgentRoleManager
+from core.multi_agent.autoscaler import AgentAutoscaler, ScalingPolicy  # NEW: Autoscaler
 
-# Stage 29 - Long-term Memory (NEW!)
+# Stage 29 - Long-term Memory
 from core.memory.memory_consolidation import MemoryConsolidation as LongTermMemoryConsolidation
 from core.memory.semantic_memory import SemanticMemory
 from core.memory.memory_retrieval import MemoryRetrieval
 
-# Stage 30 - Self-Evolution (NEW!)
+# Stage 30 - Self-Evolution
 from core.self_evolution.self_evolution_manager import SelfEvolutionManager, EvolutionMode
 
 from core.introspection_api import IntrospectionAPI
@@ -117,9 +119,9 @@ def ensure_directories(cfg: dict) -> None:
         ROOT_DIR / "milestones",
         ROOT_DIR / "sandbox",
         ROOT_DIR / "data",
-        ROOT_DIR / "memory" / "multi_agent",  # NEW: multi-agent storage
-        ROOT_DIR / "memory" / "semantic",     # NEW: semantic memory
-        ROOT_DIR / "memory" / "self_evolution",  # NEW: evolution storage
+        ROOT_DIR / "memory" / "multi_agent",
+        ROOT_DIR / "memory" / "semantic",
+        ROOT_DIR / "memory" / "self_evolution",
     ]
     for p in dirs:
         p.mkdir(parents=True, exist_ok=True)
@@ -242,11 +244,10 @@ async def _dream_loop(dream: DreamMode, stop_event: asyncio.Event, logger: loggi
                 logger.error(f"DreamMode loop error: {e}")
     logger.info("DreamMode loop stopped.")
 
-# Memory consolidation loop
 async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: asyncio.Event, logger: logging.Logger) -> None:
     logger.info("MemoryConsolidation loop started.")
     while not stop_event.is_set():
-        await asyncio.sleep(3600)  # Check every hour
+        await asyncio.sleep(3600)
         if stop_event.is_set():
             break
         if consolidator.should_consolidate():
@@ -258,7 +259,6 @@ async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: asy
                 logger.error(f"MemoryConsolidation error: {e}")
     logger.info("MemoryConsolidation loop stopped.")
 
-# Multi-agent message polling loop
 async def _multi_agent_loop(coordinator: MultiAgentCoordinator, stop_event: asyncio.Event, logger: logging.Logger) -> None:
     logger.info("🤝 Multi-Agent message polling started.")
     poll_interval = coordinator._config.get("message_processing", {}).get("poll_interval_sec", 2)
@@ -272,7 +272,6 @@ async def _multi_agent_loop(coordinator: MultiAgentCoordinator, stop_event: asyn
         await asyncio.sleep(poll_interval)
     logger.info("🤝 Multi-Agent loop stopped.")
 
-# NEW: Long-term memory consolidation loop
 async def _longterm_memory_loop(
     mem_consolidation: LongTermMemoryConsolidation,
     semantic_mem: SemanticMemory,
@@ -282,31 +281,49 @@ async def _longterm_memory_loop(
 ) -> None:
     logger.info("🧠 Long-term Memory consolidation loop started.")
     while not stop_event.is_set():
-        await asyncio.sleep(7200)  # Every 2 hours
+        await asyncio.sleep(7200)
         if stop_event.is_set():
             break
         
         try:
-            # Get recent episodes
             recent = episodic_mem.get_recent_episodes(100)
-            
-            # Run consolidation cycle
             result = mem_consolidation.run_consolidation_cycle(recent)
             logger.info(
                 f"🧠 Memory consolidation: consolidated={result['consolidated']}, "
                 f"forgotten={result['forgotten']}, total={result['total_memories']}"
             )
-            
-            # Extract knowledge to semantic memory
             for episode in recent:
                 semantic_mem.extract_knowledge_from_episode(episode)
-            
             logger.debug("🧠 Semantic knowledge extraction complete")
-            
         except Exception as e:
             logger.error(f"🧠 Long-term memory error: {e}")
     
     logger.info("🧠 Long-term Memory loop stopped.")
+
+# NEW: Autoscaler background loop
+async def _autoscaler_loop(autoscaler: AgentAutoscaler, stop_event: asyncio.Event, logger: logging.Logger) -> None:
+    logger.info("🚀 Autoscaler monitoring started.")
+    check_interval = autoscaler._config.get("check_interval_sec", 60)
+    
+    while not stop_event.is_set():
+        await asyncio.sleep(check_interval)
+        if stop_event.is_set():
+            break
+        
+        if not autoscaler._enabled:
+            continue
+        
+        try:
+            result = await autoscaler.check_and_scale()
+            if result["scaled_up"] or result["scaled_down"] or result["replaced"]:
+                logger.info(
+                    f"🚀 Autoscaler: up={result['scaled_up']} down={result['scaled_down']} "
+                    f"replaced={result['replaced']}"
+                )
+        except Exception as e:
+            logger.error(f"🚀 Autoscaler error: {e}")
+    
+    logger.info("🚀 Autoscaler loop stopped.")
 
 async def async_main(cfg: dict, logger: logging.Logger) -> None:
     loop = asyncio.get_running_loop()
@@ -319,7 +336,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if not mem.health_check():
         logger.error("EpisodicMemory health check FAILED. Aborting.")
         return
-    mem.add_episode("system.start", "Digital Being started with FULL COGNITIVE ARCHITECTURE", outcome="success")
+    mem.add_episode("system.start", "Digital Being started with FULL COGNITIVE ARCHITECTURE + Autoscaler", outcome="success")
 
     principles_stored = mem.get_active_principles()
     if principles_stored:
@@ -429,7 +446,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     belief_system = BeliefSystem(state_path=ROOT_DIR / "memory" / "beliefs.json")
     belief_stats = belief_system.get_stats()
-    logger.info(f"BeliefSystem ready. active={belief_stats['active']} strong={belief_stats['strong']} rejected={belief_stats['rejected']} total_formed={belief_stats['total_beliefs_formed']}")
+    logger.info(f"BeliefSystem ready. active={belief_stats['active']} strong={belief_stats['strong']} rejected={belief_stats['rejected']} total_formed={belief_stats['total_formed']}")
 
     contradiction_resolver = ContradictionResolver(state_path=ROOT_DIR / "memory" / "contradictions.json")
     contr_stats = contradiction_resolver.get_stats()
@@ -485,7 +502,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info("MetaCognition disabled.")
 
     # ============================================================
-    # 8-Layer Cognitive Architecture + Stages 26-30
+    # 8-Layer Cognitive Architecture + Stages 26-31
     # ============================================================
     
     # Layer 2: Tool Registry
@@ -514,15 +531,17 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("📚 SkillLibrary disabled.")
     
-    # Stage 27: Multi-Agent Communication (Basic)
+    # Stage 27-28: Multi-Agent Communication + Advanced Features
     multi_agent_cfg = cfg.get("multi_agent", {})
     multi_agent_enabled = bool(multi_agent_cfg.get("enabled", False))
     multi_agent_coordinator = None
+    agent_autoscaler = None
+    
     if multi_agent_enabled and skill_library:
         agent_id = f"{multi_agent_cfg.get('agent_name', 'primary')}_{int(time.time())}"
         storage_dir = ROOT_DIR / "memory"
-        shared_registry = Path(multi_agent_cfg.get("shared_storage", {}).get("registry_path", "memory/multi_agent/shared_registry.json"))
-        shared_messages = Path(multi_agent_cfg.get("shared_storage", {}).get("message_storage", "memory/multi_agent/shared_messages"))
+        shared_registry = Path(multi_agent_cfg.get("shared_storage", {}).get("registry_path", "memory/multi_agent/registry.json"))
+        shared_messages = Path(multi_agent_cfg.get("shared_storage", {}).get("message_storage", "memory/multi_agent/messages"))
         if not shared_registry.is_absolute():
             shared_registry = ROOT_DIR / shared_registry
         if not shared_messages.is_absolute():
@@ -541,14 +560,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         ma_stats = multi_agent_coordinator.get_stats()
         logger.info(f"🤝 MultiAgentCoordinator ready. agent_id={agent_id[:20]}... online_agents={ma_stats['registry']['online_agents']}")
         
-        # ========== Stage 28: Advanced Multi-Agent (NEW!) ==========
-        # Integrate task delegation, consensus, roles
-        
-      # FIX: Use AgentRoleManager
-        
-        # Attach to coordinator
-       
-        # Get stats before assigning role
+        # Advanced Multi-Agent stats
         td_stats = multi_agent_coordinator._task_delegation.get_stats()
         cb_stats = multi_agent_coordinator._consensus_builder.get_stats()
         
@@ -556,12 +568,39 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['proposals_created']} decisions={cb_stats['decisions_made']}")
         logger.info(f"🎭 AgentRoleManager ready for agent {agent_id[:20]}...")
         
+        # Stage 31: Autoscaler
+        autoscaler_cfg = multi_agent_cfg.get("autoscaling", {})
+        autoscaler_enabled = bool(autoscaler_cfg.get("enabled", False))
+        
+        if autoscaler_enabled:
+            policy = ScalingPolicy(
+                scale_up_threshold=float(autoscaler_cfg.get("scale_up_threshold", 0.75)),
+                scale_down_threshold=float(autoscaler_cfg.get("scale_down_threshold", 0.25)),
+                scale_up_cooldown_sec=int(autoscaler_cfg.get("scale_up_cooldown_sec", 300)),
+                scale_down_cooldown_sec=int(autoscaler_cfg.get("scale_down_cooldown_sec", 600)),
+                min_agents_per_type=int(autoscaler_cfg.get("min_agents_per_type", 1)),
+                max_agents_per_type=int(autoscaler_cfg.get("max_agents_per_type", 5)),
+                unhealthy_threshold=int(autoscaler_cfg.get("unhealthy_threshold", 3)),
+                heartbeat_timeout_sec=int(autoscaler_cfg.get("heartbeat_timeout_sec", 120))
+            )
+            
+            agent_autoscaler = AgentAutoscaler(
+                registry=multi_agent_coordinator._agent_registry,
+                policy=policy,
+                config=autoscaler_cfg
+            )
+            
+            as_stats = agent_autoscaler.get_stats()
+            logger.info(f"🚀 AgentAutoscaler ready. check_interval={autoscaler_cfg.get('check_interval_sec', 60)}s")
+        else:
+            logger.info("🚀 AgentAutoscaler disabled.")
+        
     elif multi_agent_enabled and not skill_library:
         logger.warning("🤝 MultiAgent requires SkillLibrary. Enable skills to use multi-agent features.")
     else:
         logger.info("🤝 MultiAgentCoordinator disabled.")
     
-    # ========== Stage 29: Long-term Memory (NEW!) ==========
+    # Stage 29: Long-term Memory
     longterm_memory_cfg = cfg.get("longterm_memory", {})
     longterm_enabled = bool(longterm_memory_cfg.get("enabled", True))
     
@@ -587,10 +626,10 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("🧠 Long-term Memory disabled.")
     
-    # ========== Stage 30: Self-Evolution (NEW!) ==========
+    # Stage 30: Self-Evolution
     evolution_cfg = cfg.get("self_evolution", {})
     evolution_enabled = bool(evolution_cfg.get("enabled", True))
-    evolution_mode = evolution_cfg.get("mode", "supervised")  # supervised, semi_autonomous, autonomous
+    evolution_mode = evolution_cfg.get("mode", "supervised")
     
     self_evolution = None
     if evolution_enabled:
@@ -732,16 +771,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         "meta_optimizer": meta_optimizer,
         "goal_oriented": goal_oriented,
         "multi_agent": multi_agent_coordinator,
-        # Stage 29
         "memory_consolidation": mem_consolidation,
         "semantic_memory": semantic_memory,
         "memory_retrieval": memory_retrieval,
-        # Stage 30
         "self_evolution": self_evolution,
+        "autoscaler": agent_autoscaler,  # NEW: Add to API
     }
     api = IntrospectionAPI(
         host=api_cfg.get("host", "127.0.0.1"),
-        port=int(api_cfg.get("port", 8765)),
+        port=int(api_cfg.get("port", 8766)),
         components=api_components,
         start_time=start_time,
     )
@@ -791,6 +829,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         if hasattr(multi_agent_coordinator, '_task_delegation'):
             logger.info(f"  ⚙️  Tasks       : created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
             logger.info(f"  🗳️  Consensus   : proposals={cb_stats['proposals_created']} decisions={cb_stats['decisions_made']}")
+    if agent_autoscaler:
+        logger.info(f"  🚀 Autoscaler  : {'enabled' if agent_autoscaler._enabled else 'disabled'}")
     if mem_consolidation:
         logger.info(f"  🧠 LT Memory   : {mc_stats['total_memories']} consolidated, {mc_stats['forgotten_count']} forgotten")
         logger.info(f"  📚 Semantic    : {sm_stats['total_concepts']} concepts, {sm_stats['total_facts']} facts")
@@ -805,11 +845,11 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"  🚀 Proactive   : {len(proactive._triggers)} triggers")
     if meta_optimizer:
         logger.info(f"  🔬 MetaLearn   : {len(meta_optimizer._ab_tests)} A/B tests")
-    logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
+    logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8766)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 80)
-    logger.info("🧠 FULL COGNITIVE ARCHITECTURE ACTIVE: Stages 1-30 COMPLETE")
-    logger.info("🚀 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution")
+    logger.info("🧠 FULL COGNITIVE ARCHITECTURE ACTIVE: Stages 1-31 COMPLETE")
+    logger.info("🚀 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution | 🔄 Autoscaling")
     logger.info("Running... (Ctrl+C to stop)")
 
     stop_event = asyncio.Event()
@@ -904,11 +944,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     dream_task = asyncio.create_task(_dream_loop(dream, stop_event, logger), name="dream_loop") if dream_enabled else None
     consolidation_task = asyncio.create_task(_consolidation_loop(consolidator, stop_event, logger), name="consolidation_loop") if (consolidation_enabled and consolidator) else None
     multi_agent_task = asyncio.create_task(_multi_agent_loop(multi_agent_coordinator, stop_event, logger), name="multi_agent_loop") if multi_agent_enabled and multi_agent_coordinator else None
-    # NEW: Long-term memory loop
     longterm_memory_task = asyncio.create_task(
         _longterm_memory_loop(mem_consolidation, semantic_memory, mem, stop_event, logger),
         name="longterm_memory_loop"
     ) if (longterm_enabled and mem_consolidation) else None
+    # NEW: Autoscaler loop
+    autoscaler_task = asyncio.create_task(
+        _autoscaler_loop(agent_autoscaler, stop_event, logger),
+        name="autoscaler_loop"
+    ) if agent_autoscaler else None
 
     await stop_event.wait()
 
@@ -929,6 +973,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         tasks_to_cancel.append(multi_agent_task)
     if longterm_memory_task is not None:
         tasks_to_cancel.append(longterm_memory_task)
+    if autoscaler_task is not None:
+        tasks_to_cancel.append(autoscaler_task)
     
     for task in tasks_to_cancel:
         task.cancel()
@@ -950,7 +996,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if skill_library:
         skill_library._save()
 
-    mem.add_episode("system.stop", "Digital Being stopped cleanly with FULL ARCHITECTURE", outcome="success")
+    mem.add_episode("system.stop", "Digital Being stopped cleanly with FULL ARCHITECTURE + Autoscaler", outcome="success")
     vector_mem.close()
     mem.close()
     logger.info("Digital Being shut down cleanly.")
@@ -960,11 +1006,11 @@ def main() -> None:
     seed = load_yaml(SEED_PATH)
     logger = setup_logging(cfg)
     logger.info("=" * 72)
-    logger.info("  🧠 Digital Being — FINAL INTEGRATION: Stages 28-30")
+    logger.info("  🧠 Digital Being — FINAL INTEGRATION: Stages 28-31")
     logger.info(f"  Version        : {cfg['system']['version']}")
     logger.info(f"  Strategy model : {cfg['ollama']['strategy_model']}")
     logger.info(f"  Embed model    : {cfg['ollama']['embed_model']}")
-    logger.info("  🤝 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution")
+    logger.info("  🤝 Multi-Agent | 🧠 Memory | 🧬 Evolution | 🚀 Autoscaling")
     logger.info("=" * 72)
     ensure_directories(cfg)
     if is_first_run(cfg):
@@ -977,9 +1023,6 @@ def main() -> None:
     
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
-    # for sig in (signal.SIGINT, signal.SIGTERM):
-    #     loop.add_signal_handler(sig, lambda: asyncio.create_task(asyncio.Event().set()))
     
     try:
         loop.run_until_complete(async_main(cfg, logger))
