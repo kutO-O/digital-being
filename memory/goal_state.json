@@ -1,6 +1,15 @@
 {
-  "active_goal": null,
+  "active_goal": {
+    "goal": "Развить эффективный подход к поиску файлов в сложной файловой системе",
+    "action_type": "analyze",
+    "risk_level": "low",
+    "started_at": "2026-02-22T01:07:18",
+    "tick_started": 1,
+    "status": "completed",
+    "completed_at": "2026-02-22T01:07:18",
+    "tick_ended": 1
+  },
   "interrupted_at": null,
   "resume_count": 0,
-  "total_goals_completed": 0
+  "total_goals_completed": 80
 }

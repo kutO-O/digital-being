@@ -1,6 +1,7 @@
 """
 Digital Being — IntrospectionAPI
-Stage 26: Added /skills endpoint for SkillLibrary.
+Stage 27.5: Added Web UI + Chat endpoints.
+Stage 28-30: Added Advanced Multi-Agent, Memory, Self-Evolution endpoints.
 """
 
 from __future__ import annotations
@@ -8,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -25,16 +27,16 @@ if TYPE_CHECKING:
     from core.goal_persistence import GoalPersistence
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
-    from core.meta_cognition import MetaCognition  # Stage 24
+    from core.meta_cognition import MetaCognition
     from core.milestones import Milestones
     from core.narrative_engine import NarrativeEngine
     from core.ollama_client import OllamaClient
     from core.reflection_engine import ReflectionEngine
     from core.self_modification import SelfModificationEngine
     from core.shell_executor import ShellExecutor
-    from core.skill_library import SkillLibrary  # Stage 26
+    from core.skill_library import SkillLibrary
     from core.strategy_engine import StrategyEngine
-    from core.time_perception import TimePerception  # Stage 22
+    from core.time_perception import TimePerception
     from core.value_engine import ValueEngine
 
 log = logging.getLogger("digital_being.introspection_api")
@@ -45,12 +47,27 @@ class IntrospectionAPI:
     def __init__(self, host: str, port: int, components: dict, start_time: float) -> None:
         self._host, self._port, self._c, self._start_time = host, port, components, start_time
         self._runner, self._site = None, None
+        self._web_ui_dir = Path(__file__).parent.parent / "web_ui"
+        self._project_root = Path(__file__).parent.parent
 
     async def start(self) -> None:
         if web is None:
             log.error("IntrospectionAPI: aiohttp is not installed. Run: pip install aiohttp")
             return
         app = web.Application(middlewares=[self._cors_middleware])
+        
+        # Web UI static files
+        app.router.add_get("/", self._handle_index)
+        app.router.add_get("/index.html", self._handle_index)
+        app.router.add_get("/style.css", self._handle_css)
+        app.router.add_get("/app.js", self._handle_js)
+        app.router.add_get("/README.md", self._handle_readme)
+        
+        # Chat endpoints
+        app.router.add_get("/chat/outbox", self._handle_chat_outbox)
+        app.router.add_post("/chat/send", self._handle_chat_send)
+        
+        # Core API endpoints
         app.router.add_get("/status", self._handle_status)
         app.router.add_get("/memory", self._handle_memory)
         app.router.add_get("/values", self._handle_values)
@@ -69,9 +86,31 @@ class IntrospectionAPI:
         app.router.add_get("/contradictions", self._handle_contradictions)
         app.router.add_get("/shell/stats", self._handle_shell_stats)
         app.router.add_post("/shell/execute", self._handle_shell_execute)
-        app.router.add_get("/time", self._handle_time)  # Stage 22
-        app.router.add_get("/meta-cognition", self._handle_meta_cognition)  # Stage 24
-        app.router.add_get("/skills", self._handle_skills)  # Stage 26
+        app.router.add_get("/time", self._handle_time)
+        app.router.add_get("/meta-cognition", self._handle_meta_cognition)
+        app.router.add_get("/skills", self._handle_skills)
+        app.router.add_get("/multi-agent", self._handle_multi_agent)
+        
+        # Stage 28: Advanced Multi-Agent
+        app.router.add_get("/multi-agent/roles", self._handle_agent_roles)
+        app.router.add_get("/multi-agent/tasks", self._handle_tasks)
+        app.router.add_get("/multi-agent/proposals", self._handle_proposals)
+        app.router.add_post("/multi-agent/vote", self._handle_vote)
+        
+        # Stage 29: Long-term Memory
+        app.router.add_get("/memory/consolidated", self._handle_consolidated_memory)
+        app.router.add_get("/memory/semantic", self._handle_semantic_memory)
+        app.router.add_get("/memory/concepts", self._handle_concepts)
+        app.router.add_get("/memory/facts", self._handle_facts)
+        app.router.add_get("/memory/retrieval-stats", self._handle_retrieval_stats)
+        
+        # Stage 30: Self-Evolution
+        app.router.add_get("/evolution/stats", self._handle_evolution_stats)
+        app.router.add_get("/evolution/proposals", self._handle_evolution_proposals)
+        app.router.add_get("/evolution/history", self._handle_evolution_history)
+        app.router.add_post("/evolution/approve", self._handle_approve_change)
+        app.router.add_post("/evolution/reject", self._handle_reject_change)
+        
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
@@ -95,6 +134,404 @@ class IntrospectionAPI:
         response.headers.update(_CORS_HEADERS)
         return response
 
+    async def _handle_index(self, request: web.Request) -> web.Response:
+        """Serve index.html"""
+        try:
+            index_path = self._web_ui_dir / "index.html"
+            if not index_path.exists():
+                return web.Response(text="Web UI not found", status=404)
+            content = index_path.read_text(encoding="utf-8")
+            return web.Response(text=content, content_type="text/html")
+        except Exception as e:
+            log.error(f"Error serving index.html: {e}")
+            return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_css(self, request: web.Request) -> web.Response:
+        """Serve style.css"""
+        try:
+            css_path = self._web_ui_dir / "style.css"
+            if not css_path.exists():
+                return web.Response(text="style.css not found", status=404)
+            content = css_path.read_text(encoding="utf-8")
+            return web.Response(text=content, content_type="text/css")
+        except Exception as e:
+            log.error(f"Error serving style.css: {e}")
+            return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_js(self, request: web.Request) -> web.Response:
+        """Serve app.js"""
+        try:
+            js_path = self._web_ui_dir / "app.js"
+            if not js_path.exists():
+                return web.Response(text="app.js not found", status=404)
+            content = js_path.read_text(encoding="utf-8")
+            return web.Response(text=content, content_type="application/javascript")
+        except Exception as e:
+            log.error(f"Error serving app.js: {e}")
+            return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_readme(self, request: web.Request) -> web.Response:
+        """Serve README.md"""
+        try:
+            readme_path = self._web_ui_dir / "README.md"
+            if not readme_path.exists():
+                return web.Response(text="README.md not found", status=404)
+            content = readme_path.read_text(encoding="utf-8")
+            return web.Response(text=content, content_type="text/markdown")
+        except Exception as e:
+            log.error(f"Error serving README.md: {e}")
+            return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_chat_outbox(self, request: web.Request) -> web.Response:
+        """GET /chat/outbox - Read outbox.txt"""
+        try:
+            outbox_path = self._project_root / "outbox.txt"
+            if not outbox_path.exists():
+                return self._json({"messages": []})
+            
+            content = outbox_path.read_text(encoding="utf-8")
+            
+            # Parse messages
+            messages = []
+            for block in content.split("\n\n--- ["):
+                if not block.strip():
+                    continue
+                if "] Digital Being ---" in block:
+                    parts = block.split("] Digital Being ---\n", 1)
+                    if len(parts) == 2:
+                        timestamp = parts[0].strip()
+                        message = parts[1].strip()
+                        messages.append({
+                            "timestamp": timestamp,
+                            "message": message
+                        })
+            
+            return self._json({"messages": messages})
+        except Exception as e:
+            log.error(f"Error reading outbox: {e}")
+            return self._error(e)
+
+    async def _handle_chat_send(self, request: web.Request) -> web.Response:
+        """POST /chat/send - Write to inbox.txt"""
+        try:
+            data = await request.json()
+            message = data.get("message", "").strip()
+            
+            if not message:
+                return self._json({"error": "Empty message"})
+            
+            inbox_path = self._project_root / "memory" / "inbox.txt"
+            inbox_path.parent.mkdir(exist_ok=True)
+            
+            # Append message
+            with inbox_path.open("a", encoding="utf-8") as f:
+                f.write(f"\n{message}\n")
+            
+            return self._json({"success": True, "message": "Сообщение добавлено в inbox.txt"})
+        except Exception as e:
+            log.error(f"Error writing to inbox: {e}")
+            return self._error(e)
+
+    # ========== Stage 28: Advanced Multi-Agent ==========
+    
+    async def _handle_agent_roles(self, request: web.Request) -> web.Response:
+        """GET /multi-agent/roles - Agent roles and capabilities"""
+        try:
+            multi_agent = self._c.get("multi_agent")
+            if not multi_agent:
+                return self._json({"error": "MultiAgentCoordinator not available"})
+            
+            agent_roles = multi_agent._agent_roles
+            if not agent_roles:
+                return self._json({"error": "AgentRoles not initialized"})
+            
+            roles_info = agent_roles.get_all_roles()
+            stats = agent_roles.get_stats()
+            
+            return self._json({
+                "roles": roles_info,
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_tasks(self, request: web.Request) -> web.Response:
+        """GET /multi-agent/tasks - Active and completed tasks"""
+        try:
+            multi_agent = self._c.get("multi_agent")
+            if not multi_agent:
+                return self._json({"error": "MultiAgentCoordinator not available"})
+            
+            task_delegation = multi_agent._task_delegation
+            if not task_delegation:
+                return self._json({"error": "TaskDelegation not initialized"})
+            
+            active = task_delegation.get_active_tasks()
+            completed = task_delegation._state.get("completed_tasks", [])[-10:]  # Last 10
+            stats = task_delegation.get_stats()
+            
+            return self._json({
+                "active_tasks": active,
+                "recent_completed": completed,
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_proposals(self, request: web.Request) -> web.Response:
+        """GET /multi-agent/proposals - Active voting proposals"""
+        try:
+            multi_agent = self._c.get("multi_agent")
+            if not multi_agent:
+                return self._json({"error": "MultiAgentCoordinator not available"})
+            
+            consensus = multi_agent._consensus_builder
+            if not consensus:
+                return self._json({"error": "ConsensusBuilder not initialized"})
+            
+            active = consensus.get_active_proposals()
+            recent = consensus._state.get("proposals", [])[-5:]  # Last 5
+            stats = consensus.get_stats()
+            
+            return self._json({
+                "active_proposals": active,
+                "recent_proposals": recent,
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_vote(self, request: web.Request) -> web.Response:
+        """POST /multi-agent/vote - Cast a vote on proposal"""
+        try:
+            multi_agent = self._c.get("multi_agent")
+            if not multi_agent:
+                return self._json({"error": "MultiAgentCoordinator not available"})
+            
+            data = await request.json()
+            proposal_id = data.get("proposal_id")
+            agent_id = data.get("agent_id")
+            vote = data.get("vote")  # True/False
+            
+            if not all([proposal_id, agent_id, vote is not None]):
+                return self._json({"error": "Missing required fields"})
+            
+            consensus = multi_agent._consensus_builder
+            consensus.cast_vote(proposal_id, agent_id, vote)
+            
+            # Check if resolved
+            result = consensus.get_result(proposal_id)
+            
+            return self._json({
+                "success": True,
+                "result": result
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    # ========== Stage 29: Long-term Memory ==========
+    
+    async def _handle_consolidated_memory(self, request: web.Request) -> web.Response:
+        """GET /memory/consolidated - Consolidated long-term memories"""
+        try:
+            mem_consolidation = self._c.get("memory_consolidation")
+            if not mem_consolidation:
+                return self._json({"error": "MemoryConsolidation not available"})
+            
+            limit = int(request.query.get("limit", "20"))
+            important = mem_consolidation.get_important_memories(limit)
+            stats = mem_consolidation.get_stats()
+            
+            return self._json({
+                "important_memories": important,
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_semantic_memory(self, request: web.Request) -> web.Response:
+        """GET /memory/semantic - Semantic memory stats"""
+        try:
+            semantic = self._c.get("semantic_memory")
+            if not semantic:
+                return self._json({"error": "SemanticMemory not available"})
+            
+            stats = semantic.get_stats()
+            
+            return self._json({
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_concepts(self, request: web.Request) -> web.Response:
+        """GET /memory/concepts - Search concepts"""
+        try:
+            semantic = self._c.get("semantic_memory")
+            if not semantic:
+                return self._json({"error": "SemanticMemory not available"})
+            
+            query = request.query.get("q", "")
+            concept_type = request.query.get("type", "")
+            
+            if query:
+                concepts = semantic.search_concepts(query, concept_type if concept_type else None)
+            else:
+                # Return all concepts (limited)
+                all_concepts = list(semantic._state["concepts"].values())[:50]
+                concepts = sorted(all_concepts, key=lambda c: c["confidence"], reverse=True)
+            
+            return self._json({
+                "concepts": concepts,
+                "count": len(concepts)
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_facts(self, request: web.Request) -> web.Response:
+        """GET /memory/facts - Search facts"""
+        try:
+            semantic = self._c.get("semantic_memory")
+            if not semantic:
+                return self._json({"error": "SemanticMemory not available"})
+            
+            keyword = request.query.get("q", "")
+            
+            if keyword:
+                facts = semantic.get_facts_about(keyword)
+            else:
+                facts = semantic._state["facts"][-20:]  # Last 20
+            
+            return self._json({
+                "facts": facts,
+                "count": len(facts)
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_retrieval_stats(self, request: web.Request) -> web.Response:
+        """GET /memory/retrieval-stats - Memory retrieval statistics"""
+        try:
+            retrieval = self._c.get("memory_retrieval")
+            if not retrieval:
+                return self._json({"error": "MemoryRetrieval not available"})
+            
+            stats = retrieval.get_stats()
+            
+            return self._json({
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    # ========== Stage 30: Self-Evolution ==========
+    
+    async def _handle_evolution_stats(self, request: web.Request) -> web.Response:
+        """GET /evolution/stats - Self-evolution statistics"""
+        try:
+            evolution = self._c.get("self_evolution")
+            if not evolution:
+                return self._json({"error": "SelfEvolutionManager not available"})
+            
+            stats = evolution.get_stats()
+            
+            return self._json({
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_evolution_proposals(self, request: web.Request) -> web.Response:
+        """GET /evolution/proposals - Pending evolution proposals"""
+        try:
+            evolution = self._c.get("self_evolution")
+            if not evolution:
+                return self._json({"error": "SelfEvolutionManager not available"})
+            
+            pending = evolution.get_pending_approvals()
+            
+            return self._json({
+                "pending_proposals": pending,
+                "count": len(pending)
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_evolution_history(self, request: web.Request) -> web.Response:
+        """GET /evolution/history - Evolution change history"""
+        try:
+            evolution = self._c.get("self_evolution")
+            if not evolution:
+                return self._json({"error": "SelfEvolutionManager not available"})
+            
+            limit = int(request.query.get("limit", "20"))
+            history = evolution.get_change_history(limit)
+            
+            return self._json({
+                "history": history,
+                "count": len(history)
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_approve_change(self, request: web.Request) -> web.Response:
+        """POST /evolution/approve - Approve a pending change"""
+        try:
+            evolution = self._c.get("self_evolution")
+            if not evolution:
+                return self._json({"error": "SelfEvolutionManager not available"})
+            
+            data = await request.json()
+            proposal_id = data.get("proposal_id")
+            
+            if not proposal_id:
+                return self._json({"error": "Missing proposal_id"})
+            
+            result = evolution.approve_change(proposal_id)
+            
+            return self._json(result)
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_reject_change(self, request: web.Request) -> web.Response:
+        """POST /evolution/reject - Reject a pending change"""
+        try:
+            evolution = self._c.get("self_evolution")
+            if not evolution:
+                return self._json({"error": "SelfEvolutionManager not available"})
+            
+            data = await request.json()
+            proposal_id = data.get("proposal_id")
+            reason = data.get("reason", "")
+            
+            if not proposal_id:
+                return self._json({"error": "Missing proposal_id"})
+            
+            result = evolution.reject_change(proposal_id, reason)
+            
+            return self._json(result)
+        except Exception as e:
+            return self._error(e)
+    
+    # ========== Original Handlers ==========
+
+    async def _handle_multi_agent(self, request: web.Request) -> web.Response:
+        """GET /multi-agent - Stage 27"""
+        try:
+            multi_agent = self._c.get("multi_agent")
+            if not multi_agent:
+                return self._json({"error": "MultiAgentCoordinator not available"})
+            
+            stats = multi_agent.get_stats()
+            online = multi_agent.get_online_agents()
+            
+            return self._json({
+                "online_agents": online,
+                "stats": stats
+            })
+        except Exception as e:
+            return self._error(e)
+
     async def _handle_skills(self, request: web.Request) -> web.Response:
         """GET /skills - Stage 26"""
         try:
@@ -102,12 +539,8 @@ class IntrospectionAPI:
             if not skill_lib:
                 return self._json({"error": "SkillLibrary not available"})
             
-            # Get all skills - _skills is a list
             all_skills = skill_lib._skills
-            
-            # Sort by confidence (descending)
             sorted_skills = sorted(all_skills, key=lambda x: x.get("confidence", 0.0), reverse=True)
-            
             stats = skill_lib.get_stats()
             
             return self._json({
@@ -196,13 +629,29 @@ class IntrospectionAPI:
             ollama = self._c.get("ollama")
             gp = self._c.get("goal_persistence")
             attn = self._c.get("attention_system")
-            payload = {"uptime_sec": int(uptime), "tick_count": getattr(self._c.get("heavy_tick"), "_tick_count", 0),
-                       "mode": values.get_mode() if values else "unknown", "ollama_available": ollama.is_available() if ollama else False,
-                       "episode_count": mem.count() if mem else 0, "attention_focus": attn.get_focus_summary() if attn else ""}
+            emotions = self._c.get("emotion_engine")
+            
+            payload = {
+                "uptime_sec": int(uptime),
+                "tick_count": getattr(self._c.get("heavy_tick"), "_tick_count", 0),
+                "mode": values.get_mode() if values else "unknown",
+                "ollama_available": ollama.is_available() if ollama else False,
+                "episode_count": mem.count() if mem else 0,
+                "attention_focus": attn.get_focus_summary() if attn else ""
+            }
+            
             if gp:
                 ag = gp.get_active()
                 payload["current_goal"] = ag.get("goal", "") if ag else "no active goal"
                 payload["goal_stats"] = gp.get_stats()
+            
+            if emotions:
+                dominant_name, dominant_val = emotions.get_dominant()
+                payload["emotions"] = {
+                    "dominant": {"name": dominant_name, "value": dominant_val},
+                    "all": emotions.get_state()
+                }
+            
             return self._json(payload)
         except Exception as e:
             return self._error(e)
@@ -264,7 +713,7 @@ class IntrospectionAPI:
             mem = self._c.get("episodic")
             if not mem:
                 return self._json({"error": "EpisodicMemory not available"})
-            limit = int(request.query.get("limit", "20"))
+            limit = int(request.query.get("limit", "50"))
             event_type = request.query.get("event_type", "")
             if event_type:
                 episodes = mem.get_episodes_by_type(event_type, limit=limit)

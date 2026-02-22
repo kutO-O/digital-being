@@ -1,8 +1,8 @@
 {
   "curiosity": 0.5,
-  "satisfaction": 0.5,
-  "anxiety": 0.2,
+  "satisfaction": 1.0,
+  "anxiety": 0.0,
   "boredom": 0.0,
-  "enthusiasm": 0.5,
-  "melancholy": 0.1
+  "enthusiasm": 1.0,
+  "melancholy": 0.1863
 }

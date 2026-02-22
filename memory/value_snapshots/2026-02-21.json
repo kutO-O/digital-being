@@ -1,8 +1,8 @@
 {
   "date": "2026-02-21",
   "scores": {
-    "stability": 0.7,
-    "accuracy": 0.8,
+    "stability": 0.96,
+    "accuracy": 1.0,
     "growth": 0.5,
     "curiosity": 0.0,
     "boredom": 0.0

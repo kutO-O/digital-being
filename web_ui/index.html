@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 Digital Being - Control Panel</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h1>🧠 Digital Being</h1>
+                <p class="version">Stage 27.5</p>
+            </div>
+            
+            <nav class="nav">
+                <a href="#" class="nav-item active" data-view="dashboard">
+                    <span class="icon">📊</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-view="chat">
+                    <span class="icon">💬</span>
+                    <span>Chat</span>
+                </a>
+                <a href="#" class="nav-item" data-view="memory">
+                    <span class="icon">🧠</span>
+                    <span>Memory</span>
+                </a>
+                <a href="#" class="nav-item" data-view="agents">
+                    <span class="icon">🤝</span>
+                    <span>Multi-Agent</span>
+                </a>
+                <a href="#" class="nav-item" data-view="cognition">
+                    <span class="icon">🔮</span>
+                    <span>Cognition</span>
+                </a>
+                <a href="#" class="nav-item" data-view="skills">
+                    <span class="icon">📚</span>
+                    <span>Skills</span>
+                </a>
+                <a href="#" class="nav-item" data-view="terminal">
+                    <span class="icon">💻</span>
+                    <span>Terminal</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="status-badge" id="connectionStatus">
+                    <span class="status-dot"></span>
+                    <span>Connecting...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="view active">
+                <header class="view-header">
+                    <h2>📊 System Dashboard</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-sm" id="refreshDashboard">🔄 Refresh</button>
+                    </div>
+                </header>
+
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-icon">⏱️</div>
+                        <div class="metric-content">
+                            <div class="metric-label">Uptime</div>
+                            <div class="metric-value" id="uptime">-</div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon">🎯</div>
+                        <div class="metric-content">
+                            <div class="metric-label">Tick Count</div>
+                            <div class="metric-value" id="tickCount">-</div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon">🧠</div>
+                        <div class="metric-content">
+                            <div class="metric-label">Episodes</div>
+                            <div class="metric-value" id="episodeCount">-</div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon">🔮</div>
+                        <div class="metric-content">
+                            <div class="metric-label">Mode</div>
+                            <div class="metric-value" id="mode">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-row">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🎯 Current Goal</h3>
+                        </div>
+                        <div class="card-body" id="currentGoal">
+                            Loading...
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>💭 Emotions</h3>
+                        </div>
+                        <div class="card-body" id="emotionsWidget">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>📝 Recent Activity</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="activity-list" id="recentActivity">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat View -->
+            <div id="chat-view" class="view">
+                <header class="view-header">
+                    <h2>💬 Chat with Digital Being</h2>
+                </header>
+
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-message system">
+                            <div class="message-content">
+                                <p>👋 Привет! Я Digital Being. Пиши мне в <code>memory/inbox.txt</code> и я отвечу здесь!</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chat-input-container">
+                        <div class="input-wrapper">
+                            <textarea 
+                                id="chatInput" 
+                                placeholder="Напиши сообщение (оно будет добавлено в inbox.txt)..."
+                                rows="3"
+                            ></textarea>
+                            <button class="btn btn-primary" id="sendMessage">
+                                <span>📤 Send</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Memory View -->
+            <div id="memory-view" class="view">
+                <header class="view-header">
+                    <h2>🧠 Memory Explorer</h2>
+                    <div class="header-actions">
+                        <input type="search" id="memorySearch" placeholder="Search memory..." class="search-input">
+                        <select id="memoryFilter" class="select">
+                            <option value="">All Events</option>
+                            <option value="heavy_tick.monologue">Monologues</option>
+                            <option value="goal.selected">Goals</option>
+                            <option value="social.outgoing">Social</option>
+                            <option value="system">System</option>
+                        </select>
+                    </div>
+                </header>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="memory-list" id="memoryList">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multi-Agent View -->
+            <div id="agents-view" class="view">
+                <header class="view-header">
+                    <h2>🤝 Multi-Agent Network</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-sm" id="refreshAgents">🔄 Refresh</button>
+                    </div>
+                </header>
+
+                <div class="agents-grid" id="agentsGrid">
+                    Loading...
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>📊 Agent Statistics</h3>
+                    </div>
+                    <div class="card-body" id="agentStats">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cognition View -->
+            <div id="cognition-view" class="view">
+                <header class="view-header">
+                    <h2>🔮 Cognitive Processes</h2>
+                </header>
+
+                <div class="dashboard-row">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>⚖️ Values</h3>
+                        </div>
+                        <div class="card-body" id="valuesWidget">
+                            Loading...
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🔥 Curiosity</h3>
+                        </div>
+                        <div class="card-body" id="curiosityWidget">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-row">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>💡 Beliefs</h3>
+                        </div>
+                        <div class="card-body" id="beliefsWidget">
+                            Loading...
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🧩 Meta-Cognition</h3>
+                        </div>
+                        <div class="card-body" id="metaCognitionWidget">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Skills View -->
+            <div id="skills-view" class="view">
+                <header class="view-header">
+                    <h2>📚 Skill Library</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-sm" id="refreshSkills">🔄 Refresh</button>
+                    </div>
+                </header>
+
+                <div class="card">
+                    <div class="card-body" id="skillsList">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal View -->
+            <div id="terminal-view" class="view">
+                <header class="view-header">
+                    <h2>💻 Shell Executor</h2>
+                    <div class="header-actions">
+                        <span class="badge badge-warning">⚠️ Use with caution</span>
+                    </div>
+                </header>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>📊 Statistics</h3>
+                    </div>
+                    <div class="card-body" id="shellStats">
+                        Loading...
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>⌨️ Execute Command</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="terminal-input">
+                            <input type="text" id="shellCommand" placeholder="Enter shell command..." class="input">
+                            <button class="btn btn-primary" id="executeCommand">▶️ Execute</button>
+                        </div>
+                        <div class="terminal-output" id="shellOutput">
+                            <div class="terminal-line">Ready for commands...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

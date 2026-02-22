@@ -1,0 +1,314 @@
+{
+  "primary_1771719527": {
+    "agent_id": "primary_1771719527",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771719527.083511,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771719744": {
+    "agent_id": "primary_1771719744",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771719744.6201937,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771719973": {
+    "agent_id": "primary_1771719973",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771719973.3201158,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771720113": {
+    "agent_id": "primary_1771720113",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771720113.5182762,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771720364": {
+    "agent_id": "primary_1771720364",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771720364.6332078,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771720545": {
+    "agent_id": "primary_1771720545",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771720545.9084146,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771720833": {
+    "agent_id": "primary_1771720833",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771720833.9974837,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771720862": {
+    "agent_id": "primary_1771720862",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771720862.4196205,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771720933": {
+    "agent_id": "primary_1771720933",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771720933.5160728,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771720994": {
+    "agent_id": "primary_1771720994",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771720994.9848878,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771721092": {
+    "agent_id": "secondary_1771721092",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771721092.583196,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "primary_1771721323": {
+    "agent_id": "primary_1771721323",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771721323.0876667,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771721654": {
+    "agent_id": "secondary_1771721654",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771721654.0170693,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771721797": {
+    "agent_id": "secondary_1771721797",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771721797.28475,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771721985": {
+    "agent_id": "secondary_1771721985",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771721985.0620892,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771722065": {
+    "agent_id": "secondary_1771722065",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771722065.095302,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "primary_1771722098": {
+    "agent_id": "primary_1771722098",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771722098.259815,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771722179": {
+    "agent_id": "primary_1771722179",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771722179.6854146,
+    "capabilities": [
+      "general"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771722302": {
+    "agent_id": "secondary_1771722302",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771722302.9650805,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771722370": {
+    "agent_id": "secondary_1771722370",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771722370.3041375,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771722399": {
+    "agent_id": "secondary_1771722399",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771722399.84609,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771722403": {
+    "agent_id": "secondary_1771722403",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771722403.7585413,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771722421": {
+    "agent_id": "secondary_1771722421",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771722421.0820425,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  },
+  "secondary_1771722435": {
+    "agent_id": "secondary_1771722435",
+    "name": "secondary",
+    "specialization": "analysis",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771722435.4408007,
+    "capabilities": [
+      "analysis"
+    ],
+    "load": 0.0
+  }
+}

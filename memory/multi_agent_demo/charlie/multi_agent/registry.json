@@ -1,0 +1,15 @@
+{
+  "charlie_001": {
+    "agent_id": "charlie_001",
+    "name": "Charlie",
+    "specialization": "testing",
+    "host": "localhost",
+    "port": 9002,
+    "status": "online",
+    "last_heartbeat": 1771717548.5269032,
+    "capabilities": [
+      "testing"
+    ],
+    "load": 0.0
+  }
+}

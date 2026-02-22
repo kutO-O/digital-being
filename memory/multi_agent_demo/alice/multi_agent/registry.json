@@ -1,0 +1,15 @@
+{
+  "alice_001": {
+    "agent_id": "alice_001",
+    "name": "Alice",
+    "specialization": "research",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771717548.5219162,
+    "capabilities": [
+      "research"
+    ],
+    "load": 0.0
+  }
+}
