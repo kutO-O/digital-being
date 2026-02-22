@@ -1,6 +1,6 @@
 """
 Digital Being — Entry Point
-Stage 27.5: Multi-Agent Integration
+Stage 28-30: FINAL INTEGRATION - Advanced Multi-Agent + Memory + Self-Evolution
 """
 
 from __future__ import annotations
@@ -25,25 +25,38 @@ from core.event_bus import EventBus
 from core.file_monitor import FileMonitor
 from core.goal_persistence import GoalPersistence
 
-# NEW: Fault-Tolerant Architecture
+# Fault-Tolerant Architecture
 from core.fault_tolerant_heavy_tick import FaultTolerantHeavyTick
 
-# NEW: Goal Hierarchy & Tools & Learning
+# Goal Hierarchy & Tools & Learning
 from core.goal_integration import GoalOrientedBehavior
 from core.tools import ToolRegistry, initialize_default_tools
 from core.learning import LearningEngine, PatternGuidedPlanner
 
-# NEW: Advanced Cognitive Features
+# Advanced Cognitive Features
 from core.memory_consolidation import MemoryConsolidation
 from core.theory_of_mind import UserModel
 from core.proactive_behavior import ProactiveBehaviorEngine
 from core.meta_learning import MetaOptimizer
 
-# NEW: Stage 26 - Skill Library
+# Stage 26 - Skill Library
 from core.skill_library import SkillLibrary
 
-# NEW: Stage 27 - Multi-Agent Communication
+# Stage 27 - Multi-Agent Communication
 from core.multi_agent_coordinator import MultiAgentCoordinator
+
+# Stage 28 - Advanced Multi-Agent (NEW!)
+from core.multi_agent.task_delegation import TaskDelegation
+from core.multi_agent.consensus_builder import ConsensusBuilder
+from core.multi_agent.agent_roles import AgentRoles
+
+# Stage 29 - Long-term Memory (NEW!)
+from core.memory.memory_consolidation import MemoryConsolidation as LongTermMemoryConsolidation
+from core.memory.semantic_memory import SemanticMemory
+from core.memory.memory_retrieval import MemoryRetrieval
+
+# Stage 30 - Self-Evolution (NEW!)
+from core.self_evolution.self_evolution_manager import SelfEvolutionManager, EvolutionMode
 
 from core.introspection_api import IntrospectionAPI
 from core.light_tick import LightTick
@@ -103,7 +116,10 @@ def ensure_directories(cfg: dict) -> None:
         ROOT_DIR / "memory" / "self_snapshots",
         ROOT_DIR / "milestones",
         ROOT_DIR / "sandbox",
-        ROOT_DIR / "data",  # NEW: for cognitive features
+        ROOT_DIR / "data",
+        ROOT_DIR / "memory" / "multi_agent",  # NEW: multi-agent storage
+        ROOT_DIR / "memory" / "semantic",     # NEW: semantic memory
+        ROOT_DIR / "memory" / "self_evolution",  # NEW: evolution storage
     ]
     for p in dirs:
         p.mkdir(parents=True, exist_ok=True)
@@ -226,7 +242,7 @@ async def _dream_loop(dream: DreamMode, stop_event: asyncio.Event, logger: loggi
                 logger.error(f"DreamMode loop error: {e}")
     logger.info("DreamMode loop stopped.")
 
-# NEW: Memory consolidation loop
+# Memory consolidation loop
 async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: asyncio.Event, logger: logging.Logger) -> None:
     logger.info("MemoryConsolidation loop started.")
     while not stop_event.is_set():
@@ -242,7 +258,7 @@ async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: asy
                 logger.error(f"MemoryConsolidation error: {e}")
     logger.info("MemoryConsolidation loop stopped.")
 
-# NEW: Multi-agent message polling loop
+# Multi-agent message polling loop
 async def _multi_agent_loop(coordinator: MultiAgentCoordinator, stop_event: asyncio.Event, logger: logging.Logger) -> None:
     logger.info("🤝 Multi-Agent message polling started.")
     poll_interval = coordinator._config.get("message_processing", {}).get("poll_interval_sec", 2)
@@ -256,6 +272,42 @@ async def _multi_agent_loop(coordinator: MultiAgentCoordinator, stop_event: asyn
         await asyncio.sleep(poll_interval)
     logger.info("🤝 Multi-Agent loop stopped.")
 
+# NEW: Long-term memory consolidation loop
+async def _longterm_memory_loop(
+    mem_consolidation: LongTermMemoryConsolidation,
+    semantic_mem: SemanticMemory,
+    episodic_mem: EpisodicMemory,
+    stop_event: asyncio.Event,
+    logger: logging.Logger
+) -> None:
+    logger.info("🧠 Long-term Memory consolidation loop started.")
+    while not stop_event.is_set():
+        await asyncio.sleep(7200)  # Every 2 hours
+        if stop_event.is_set():
+            break
+        
+        try:
+            # Get recent episodes
+            recent = episodic_mem.get_recent_episodes(100)
+            
+            # Run consolidation cycle
+            result = mem_consolidation.run_consolidation_cycle(recent)
+            logger.info(
+                f"🧠 Memory consolidation: consolidated={result['consolidated']}, "
+                f"forgotten={result['forgotten']}, total={result['total_memories']}"
+            )
+            
+            # Extract knowledge to semantic memory
+            for episode in recent:
+                semantic_mem.extract_knowledge_from_episode(episode)
+            
+            logger.debug("🧠 Semantic knowledge extraction complete")
+            
+        except Exception as e:
+            logger.error(f"🧠 Long-term memory error: {e}")
+    
+    logger.info("🧠 Long-term Memory loop stopped.")
+
 async def async_main(cfg: dict, logger: logging.Logger) -> None:
     loop = asyncio.get_running_loop()
     state_path = Path(cfg["paths"]["state"])
@@ -267,7 +319,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if not mem.health_check():
         logger.error("EpisodicMemory health check FAILED. Aborting.")
         return
-    mem.add_episode("system.start", "Digital Being started with Multi-Agent support", outcome="success")
+    mem.add_episode("system.start", "Digital Being started with FULL COGNITIVE ARCHITECTURE", outcome="success")
 
     principles_stored = mem.get_active_principles()
     if principles_stored:
@@ -433,7 +485,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info("MetaCognition disabled.")
 
     # ============================================================
-    # NEW: 8-Layer Cognitive Architecture + Stage 26 & 27
+    # 8-Layer Cognitive Architecture + Stages 26-30
     # ============================================================
     
     # Layer 2: Tool Registry
@@ -450,7 +502,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     learning_stats = learning_engine.get_statistics()
     logger.info(f"🧠 LearningEngine ready. patterns={learning_stats.get('total_patterns', 0)}")
     
-    # NEW: Stage 26 - Skill Library
+    # Stage 26: Skill Library
     skill_cfg = cfg.get("skills", {})
     skill_enabled = bool(skill_cfg.get("enabled", True))
     skill_library = None
@@ -462,7 +514,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("📚 SkillLibrary disabled.")
     
-    # NEW: Stage 27 - Multi-Agent Communication
+    # Stage 27: Multi-Agent Communication (Basic)
     multi_agent_cfg = cfg.get("multi_agent", {})
     multi_agent_enabled = bool(multi_agent_cfg.get("enabled", False))
     multi_agent_coordinator = None
@@ -486,15 +538,96 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             config=multi_agent_cfg,
             storage_dir=storage_dir,
         )
-        # Registration happens automatically in __init__ when auto_register=True
         ma_stats = multi_agent_coordinator.get_stats()
         logger.info(f"🤝 MultiAgentCoordinator ready. agent_id={agent_id[:20]}... online_agents={ma_stats['registry']['online_agents']}")
+        
+        # ========== Stage 28: Advanced Multi-Agent (NEW!) ==========
+        # Integrate task delegation, consensus, roles
+        task_delegation = TaskDelegation(storage_dir / "multi_agent")
+        consensus_builder = ConsensusBuilder(storage_dir / "multi_agent")
+        agent_roles = AgentRoles(storage_dir / "multi_agent")
+        
+        # Attach to coordinator
+        multi_agent_coordinator._task_delegation = task_delegation
+        multi_agent_coordinator._consensus_builder = consensus_builder
+        multi_agent_coordinator._agent_roles = agent_roles
+        
+        # Assign role to this agent
+        agent_roles.assign_role(
+            agent_id=agent_id,
+            role="coordinator" if "coordinator" in multi_agent_cfg.get("agent_name", "").lower() else "specialist"
+        )
+        
+        td_stats = task_delegation.get_stats()
+        cb_stats = consensus_builder.get_stats()
+        ar_stats = agent_roles.get_stats()
+        
+        logger.info(f"⚙️  TaskDelegation ready. active={td_stats['active_tasks']} completed={td_stats['completed_tasks']}")
+        logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['total_proposals']} approved={cb_stats['approved']}")
+        logger.info(f"🎭 AgentRoles ready. total_roles={ar_stats['total_roles']} assignments={ar_stats['role_assignments']}")
+        
     elif multi_agent_enabled and not skill_library:
         logger.warning("🤝 MultiAgent requires SkillLibrary. Enable skills to use multi-agent features.")
     else:
         logger.info("🤝 MultiAgentCoordinator disabled.")
     
-    # Layer 4: Memory Consolidation
+    # ========== Stage 29: Long-term Memory (NEW!) ==========
+    longterm_memory_cfg = cfg.get("longterm_memory", {})
+    longterm_enabled = bool(longterm_memory_cfg.get("enabled", True))
+    
+    mem_consolidation = None
+    semantic_memory = None
+    memory_retrieval = None
+    
+    if longterm_enabled:
+        storage_path = ROOT_DIR / "memory" / "semantic"
+        storage_path.mkdir(parents=True, exist_ok=True)
+        
+        mem_consolidation = LongTermMemoryConsolidation(storage_path)
+        semantic_memory = SemanticMemory(storage_path)
+        memory_retrieval = MemoryRetrieval(storage_path)
+        
+        mc_stats = mem_consolidation.get_stats()
+        sm_stats = semantic_memory.get_stats()
+        mr_stats = memory_retrieval.get_stats()
+        
+        logger.info(f"🧠 MemoryConsolidation ready. total_memories={mc_stats['total_memories']} forgotten={mc_stats['forgotten_count']}")
+        logger.info(f"📚 SemanticMemory ready. concepts={sm_stats['total_concepts']} facts={sm_stats['total_facts']}")
+        logger.info(f"🔍 MemoryRetrieval ready. queries={mr_stats['total_queries']} cache_hit_rate={mr_stats['cache_hit_rate']:.2%}")
+    else:
+        logger.info("🧠 Long-term Memory disabled.")
+    
+    # ========== Stage 30: Self-Evolution (NEW!) ==========
+    evolution_cfg = cfg.get("self_evolution", {})
+    evolution_enabled = bool(evolution_cfg.get("enabled", True))
+    evolution_mode = evolution_cfg.get("mode", "supervised")  # supervised, semi_autonomous, autonomous
+    
+    self_evolution = None
+    if evolution_enabled:
+        storage_dir = ROOT_DIR / "memory" / "self_evolution"
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        
+        mode_map = {
+            "supervised": EvolutionMode.SUPERVISED,
+            "semi_autonomous": EvolutionMode.SEMI_AUTONOMOUS,
+            "autonomous": EvolutionMode.AUTONOMOUS
+        }
+        
+        self_evolution = SelfEvolutionManager(
+            storage_dir=ROOT_DIR / "memory",
+            mode=mode_map.get(evolution_mode, EvolutionMode.SUPERVISED)
+        )
+        
+        ev_stats = self_evolution.get_stats()
+        logger.info(
+            f"🧬 SelfEvolution ready. mode={ev_stats['mode']} "
+            f"approved={ev_stats['approved_changes']} pending={ev_stats['pending_approvals']} "
+            f"rollbacks={ev_stats['rollbacks']}"
+        )
+    else:
+        logger.info("🧬 SelfEvolution disabled.")
+    
+    # Layer 4: Memory Consolidation (Original)
     consolidation_cfg = cfg.get("consolidation", {})
     consolidation_enabled = bool(consolidation_cfg.get("enabled", True))
     consolidator = None
@@ -541,7 +674,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("🔬 MetaOptimizer disabled.")
     
-    # Layer 1: Goal-Oriented Behavior (integrates with heavy tick)
+    # Layer 1: Goal-Oriented Behavior
     goal_oriented = GoalOrientedBehavior(
         ollama=ollama,
         world=world,
@@ -577,7 +710,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         time_perception=time_perc,
         social_layer=social_layer,
         meta_cognition=meta_cog,
-        # NEW: Cognitive architecture components
         goal_oriented=goal_oriented,
         tool_registry=tool_registry,
         learning_engine=learning_engine,
@@ -585,9 +717,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         user_model=user_model,
         proactive=proactive,
         meta_optimizer=meta_optimizer,
-        multi_agent_coordinator=multi_agent_coordinator,  # NEW: Stage 27
+        multi_agent_coordinator=multi_agent_coordinator,
     )
-    logger.info("⚡ FaultTolerantHeavyTick initialized with Multi-Agent support.")
+    logger.info("⚡ FaultTolerantHeavyTick initialized with FULL ARCHITECTURE.")
 
     ticker = LightTick(cfg=cfg, bus=bus)
 
@@ -602,7 +734,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         "belief_system": belief_system, "contradiction_resolver": contradiction_resolver,
         "shell_executor": shell_executor, "time_perception": time_perc, "social_layer": social_layer,
         "meta_cognition": meta_cog,
-        # NEW components
         "tool_registry": tool_registry,
         "learning_engine": learning_engine,
         "skill_library": skill_library,
@@ -610,7 +741,13 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         "proactive": proactive,
         "meta_optimizer": meta_optimizer,
         "goal_oriented": goal_oriented,
-        "multi_agent_coordinator": multi_agent_coordinator,  # NEW: Stage 27
+        "multi_agent": multi_agent_coordinator,
+        # Stage 29
+        "memory_consolidation": mem_consolidation,
+        "semantic_memory": semantic_memory,
+        "memory_retrieval": memory_retrieval,
+        # Stage 30
+        "self_evolution": self_evolution,
     }
     api = IntrospectionAPI(
         host=api_cfg.get("host", "127.0.0.1"),
@@ -625,7 +762,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     mem.add_episode("world.scan", f"Initial scan: {file_count} files", outcome="success", data={"file_count": file_count})
 
     gp_stats = goal_persistence.get_stats()
-    logger.info("=" * 72)
+    logger.info("=" * 80)
     logger.info(f"  World        : {world.summary()}")
     logger.info(f"  Values       : {values.to_prompt_context()}")
     logger.info(f"  Self v{self_model.get_version():<3}    : {self_model.get_identity()['name']}")
@@ -655,13 +792,22 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if meta_cog:
         meta_stats = meta_cog.get_stats()
         logger.info(f"  MetaCog      : insights={meta_stats['total_insights']} calibration={meta_stats['calibration_score']:.2f}")
-    # NEW architecture stats
     logger.info(f"  🛠️  Tools       : {tool_stats['total_tools']} registered")
     logger.info(f"  🧠 Learning    : {learning_stats.get('total_patterns', 0)} patterns")
     if skill_library:
         logger.info(f"  📚 Skills      : {skill_stats['total_skills']} skills, {skill_stats['total_skill_uses']} uses")
     if multi_agent_coordinator:
         logger.info(f"  🤝 MultiAgent  : {ma_stats['registry']['online_agents']} agents online")
+        if hasattr(multi_agent_coordinator, '_task_delegation'):
+            logger.info(f"  ⚙️  Tasks       : active={td_stats['active_tasks']} completed={td_stats['completed_tasks']}")
+            logger.info(f"  🗳️  Consensus   : proposals={cb_stats['total_proposals']} approved={cb_stats['approved']}")
+            logger.info(f"  🎭 Roles       : {ar_stats['total_roles']} defined, {ar_stats['role_assignments']} assigned")
+    if mem_consolidation:
+        logger.info(f"  🧠 LT Memory   : {mc_stats['total_memories']} consolidated, {mc_stats['forgotten_count']} forgotten")
+        logger.info(f"  📚 Semantic    : {sm_stats['total_concepts']} concepts, {sm_stats['total_facts']} facts")
+        logger.info(f"  🔍 Retrieval   : {mr_stats['total_queries']} queries, {mr_stats['cache_hit_rate']:.1%} cache hit")
+    if self_evolution:
+        logger.info(f"  🧬 Evolution   : mode={ev_stats['mode']}, approved={ev_stats['approved_changes']}, pending={ev_stats['pending_approvals']}")
     if consolidator:
         logger.info(f"  💤 Consolidatn : {'enabled' if consolidation_enabled else 'disabled'}")
     if user_model:
@@ -672,15 +818,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"  🔬 MetaLearn   : {len(meta_optimizer._ab_tests)} A/B tests")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
-    logger.info("=" * 72)
-    logger.info("🧠 8-Layer Cognitive Architecture + Stage 27 Multi-Agent ACTIVE")
+    logger.info("=" * 80)
+    logger.info("🧠 FULL COGNITIVE ARCHITECTURE ACTIVE: Stages 1-30 COMPLETE")
+    logger.info("🚀 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution")
     logger.info("Running... (Ctrl+C to stop)")
 
     stop_event = asyncio.Event()
     def _signal_handler():
         logger.info("⚠️ Shutdown signal received. Initiating graceful shutdown...")
         
-        # Stop tickers first
         try:
             goal_persistence.mark_interrupted()
             logger.info("✅ GoalPersistence marked interrupted")
@@ -705,7 +851,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         except Exception as e:
             logger.error(f"❌ FileMonitor stop failed: {e}")
         
-        # Flush pending writes
         logger.info("💾 Flushing pending writes...")
         
         try:
@@ -733,7 +878,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         except Exception as e:
             logger.error(f"❌ Snapshots save failed: {e}")
         
-        # Save cognitive components
         if learning_engine:
             try:
                 learning_engine.save()
@@ -771,6 +915,11 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     dream_task = asyncio.create_task(_dream_loop(dream, stop_event, logger), name="dream_loop") if dream_enabled else None
     consolidation_task = asyncio.create_task(_consolidation_loop(consolidator, stop_event, logger), name="consolidation_loop") if (consolidation_enabled and consolidator) else None
     multi_agent_task = asyncio.create_task(_multi_agent_loop(multi_agent_coordinator, stop_event, logger), name="multi_agent_loop") if multi_agent_enabled and multi_agent_coordinator else None
+    # NEW: Long-term memory loop
+    longterm_memory_task = asyncio.create_task(
+        _longterm_memory_loop(mem_consolidation, semantic_memory, mem, stop_event, logger),
+        name="longterm_memory_loop"
+    ) if (longterm_enabled and mem_consolidation) else None
 
     await stop_event.wait()
 
@@ -789,6 +938,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         tasks_to_cancel.append(consolidation_task)
     if multi_agent_task is not None:
         tasks_to_cancel.append(multi_agent_task)
+    if longterm_memory_task is not None:
+        tasks_to_cancel.append(longterm_memory_task)
+    
     for task in tasks_to_cancel:
         task.cancel()
         try:
@@ -800,7 +952,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     self_model.save_weekly_snapshot()
     await self_model.check_drift(values)
     
-    # Save new components
     if learning_engine:
         learning_engine.save()
     if user_model:
@@ -810,7 +961,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if skill_library:
         skill_library._save()
 
-    mem.add_episode("system.stop", "Digital Being stopped cleanly", outcome="success")
+    mem.add_episode("system.stop", "Digital Being stopped cleanly with FULL ARCHITECTURE", outcome="success")
     vector_mem.close()
     mem.close()
     logger.info("Digital Being shut down cleanly.")
@@ -819,12 +970,13 @@ def main() -> None:
     cfg = load_yaml(CONFIG_PATH)
     seed = load_yaml(SEED_PATH)
     logger = setup_logging(cfg)
-    logger.info("=" * 60)
-    logger.info("  🧠 Digital Being — Stage 27.5: Multi-Agent Integration")
+    logger.info("=" * 72)
+    logger.info("  🧠 Digital Being — FINAL INTEGRATION: Stages 28-30")
     logger.info(f"  Version        : {cfg['system']['version']}")
     logger.info(f"  Strategy model : {cfg['ollama']['strategy_model']}")
     logger.info(f"  Embed model    : {cfg['ollama']['embed_model']}")
-    logger.info("=" * 60)
+    logger.info("  🤝 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution")
+    logger.info("=" * 72)
     ensure_directories(cfg)
     if is_first_run(cfg):
         bootstrap_from_seed(seed, cfg, logger)
@@ -833,7 +985,17 @@ def main() -> None:
     anchors = seed.get("anchor_values", {})
     if anchors.get("locked"):
         logger.info(f"Anchor values LOCKED ({len(anchors.get('values', []))} rules).")
-    asyncio.run(async_main(cfg, logger))
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: asyncio.create_task(asyncio.Event().set()))
+    
+    try:
+        loop.run_until_complete(async_main(cfg, logger))
+    finally:
+        loop.close()
 
 if __name__ == "__main__":
     main()
