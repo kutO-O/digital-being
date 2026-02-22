@@ -2,6 +2,7 @@
 Digital Being — IntrospectionAPI
 Stage 27.5: Added Web UI + Chat endpoints.
 Stage 28-30: Added Advanced Multi-Agent, Memory, Self-Evolution endpoints.
+Stage 31: Added Autoscaler endpoints.
 """
 
 from __future__ import annotations
@@ -110,6 +111,13 @@ class IntrospectionAPI:
         app.router.add_get("/evolution/history", self._handle_evolution_history)
         app.router.add_post("/evolution/approve", self._handle_approve_change)
         app.router.add_post("/evolution/reject", self._handle_reject_change)
+        
+        # Stage 31: Autoscaler
+        app.router.add_get("/autoscaler/stats", self._handle_autoscaler_stats)
+        app.router.add_get("/autoscaler/events", self._handle_autoscaler_events)
+        app.router.add_post("/autoscaler/check", self._handle_autoscaler_check)
+        app.router.add_post("/autoscaler/enable", self._handle_autoscaler_enable)
+        app.router.add_post("/autoscaler/disable", self._handle_autoscaler_disable)
         
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -232,6 +240,86 @@ class IntrospectionAPI:
             log.error(f"Error writing to inbox: {e}")
             return self._error(e)
 
+    # ========== Stage 31: Autoscaler ==========
+    
+    async def _handle_autoscaler_stats(self, request: web.Request) -> web.Response:
+        """GET /autoscaler/stats - Autoscaler statistics"""
+        try:
+            autoscaler = self._c.get("autoscaler")
+            if not autoscaler:
+                return self._json({"error": "Autoscaler not available or not enabled"})
+            
+            stats = autoscaler.get_stats()
+            
+            return self._json(stats)
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_autoscaler_events(self, request: web.Request) -> web.Response:
+        """GET /autoscaler/events - Recent scaling events"""
+        try:
+            autoscaler = self._c.get("autoscaler")
+            if not autoscaler:
+                return self._json({"error": "Autoscaler not available or not enabled"})
+            
+            limit = int(request.query.get("limit", "20"))
+            events = autoscaler._state.get("scaling_events", [])[-limit:]
+            
+            return self._json({
+                "events": events,
+                "count": len(events)
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_autoscaler_check(self, request: web.Request) -> web.Response:
+        """POST /autoscaler/check - Trigger immediate scaling check"""
+        try:
+            autoscaler = self._c.get("autoscaler")
+            if not autoscaler:
+                return self._json({"error": "Autoscaler not available or not enabled"})
+            
+            result = await autoscaler.check_and_scale()
+            
+            return self._json({
+                "success": True,
+                "result": result
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_autoscaler_enable(self, request: web.Request) -> web.Response:
+        """POST /autoscaler/enable - Enable autoscaling"""
+        try:
+            autoscaler = self._c.get("autoscaler")
+            if not autoscaler:
+                return self._json({"error": "Autoscaler not available"})
+            
+            autoscaler._enabled = True
+            
+            return self._json({
+                "success": True,
+                "message": "Autoscaler enabled"
+            })
+        except Exception as e:
+            return self._error(e)
+    
+    async def _handle_autoscaler_disable(self, request: web.Request) -> web.Response:
+        """POST /autoscaler/disable - Disable autoscaling"""
+        try:
+            autoscaler = self._c.get("autoscaler")
+            if not autoscaler:
+                return self._json({"error": "Autoscaler not available"})
+            
+            autoscaler._enabled = False
+            
+            return self._json({
+                "success": True,
+                "message": "Autoscaler disabled"
+            })
+        except Exception as e:
+            return self._error(e)
+
     # ========== Stage 28: Advanced Multi-Agent ==========
     
     async def _handle_agent_roles(self, request: web.Request) -> web.Response:
@@ -241,7 +329,7 @@ class IntrospectionAPI:
             if not multi_agent:
                 return self._json({"error": "MultiAgentCoordinator not available"})
             
-            agent_roles = multi_agent._role_manager  # ✅ ПРАВИЛЬНО
+            agent_roles = multi_agent._role_manager
             if not agent_roles:
                 return self._json({"error": "AgentRoles not initialized"})
             
@@ -255,7 +343,7 @@ class IntrospectionAPI:
                 "capabilities": capabilities,
                 "preferred_tasks": preferred_tasks,
                 "stats": stats,
-                "available_roles": [role.value for role in AgentRole]  # Все доступные роли
+                "available_roles": [role.value for role in AgentRole]
             })
         except Exception as e:
             return self._error(e)
@@ -271,7 +359,7 @@ class IntrospectionAPI:
             if not task_delegation:
                 return self._json({"error": "TaskDelegation not initialized"})
             
-            active = task_delegation.get_pending_tasks()  # ✅ правильный метод
+            active = task_delegation.get_pending_tasks()
             completed = [t for t in task_delegation._state.get("tasks_created", []) 
                         if t.get("status") == "completed"][-10:]
             stats = task_delegation.get_stats()
