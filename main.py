@@ -647,8 +647,47 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     stop_event = asyncio.Event()
     def _signal_handler():
-        logger.info("Shutdown signal received.")
-        stop_event.set()
+    logger.info("⚠️ Shutdown signal received. Initiating graceful shutdown...")
+    
+    # Stop tickers
+    try:
+        goal_persistence.mark_interrupted()
+        ticker.stop()
+        heavy.stop()
+        monitor.stop()
+        logger.info("✅ Tickers stopped")
+    except Exception as e:
+        logger.error(f"❌ Ticker stop failed: {e}")
+    
+    # Flush pending writes
+    logger.info("💾 Flushing pending writes...")
+    
+    try:
+        self_model._save()
+        values._persist_state()
+        milestones._save()
+        values.save_weekly_snapshot()
+        self_model.save_weekly_snapshot()
+        logger.info("✅ Core components saved")
+    except Exception as e:
+        logger.error(f"❌ Save failed: {e}")
+    
+    # Save cognitive components
+    for component_name, component in [
+        ("learning_engine", learning_engine),
+        ("user_model", user_model),
+        ("meta_optimizer", meta_optimizer),
+        ("skill_library", skill_library),
+    ]:
+        if component:
+            try:
+                component.save()
+                logger.info(f"✅ {component_name} saved")
+            except Exception as e:
+                logger.error(f"❌ {component_name} save failed: {e}")
+    
+    logger.info("✅ Graceful shutdown complete. Goodbye! 👋")
+    stop_event.set()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, _signal_handler)
