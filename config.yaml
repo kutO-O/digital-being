@@ -28,6 +28,29 @@ ollama:
   timeout_sec: 30
   max_calls_per_tick: 10
 
+# ============================================================
+# 🚀 NEW: LLM Response Cache (TD-021)
+# ============================================================
+cache:
+  # Cache identical LLM prompts for 5-10x speedup
+  max_size: 100          # Maximum cached responses
+  ttl_seconds: 300.0     # Time To Live (5 minutes)
+  # Automatic cleanup runs every 24 heavy ticks
+
+# ============================================================
+# 🔒 NEW: Rate Limiting (TD-015, TD-028)
+# ============================================================
+rate_limit:
+  # Token bucket algorithm - prevents LLM overload
+  
+  # Chat requests (expensive)
+  chat_rate: 5.0         # 5 requests per second
+  chat_burst: 10         # Allow burst up to 10
+  
+  # Embed requests (cheap)
+  embed_rate: 20.0       # 20 requests per second
+  embed_burst: 50        # Allow burst up to 50
+
 scores:
   exploration_base: 0.5
   curiosity_base: 0.5
