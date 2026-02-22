@@ -1,0 +1,17 @@
+{
+  "knowledge": {},
+  "context": {
+    "working_on": null,
+    "recent_topics": [],
+    "mood": "neutral",
+    "session_start": 1771713538.9306471
+  },
+  "preferences": {
+    "explanation_style": "detailed",
+    "code_examples": true,
+    "proactive_suggestions": true
+  },
+  "goals": [],
+  "interaction_count": 0,
+  "topics_discussed": {}
+}

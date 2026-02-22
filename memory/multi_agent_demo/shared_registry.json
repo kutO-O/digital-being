@@ -1,0 +1,42 @@
+{
+  "alice_001": {
+    "agent_id": "alice_001",
+    "name": "Alice",
+    "specialization": "research",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771718336.3503742,
+    "capabilities": [
+      "research"
+    ],
+    "load": 0.0
+  },
+  "bob_001": {
+    "agent_id": "bob_001",
+    "name": "Bob",
+    "specialization": "coding",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771718336.3642466,
+    "capabilities": [
+      "code",
+      "coding"
+    ],
+    "load": 0.0
+  },
+  "charlie_001": {
+    "agent_id": "charlie_001",
+    "name": "Charlie",
+    "specialization": "testing",
+    "host": "localhost",
+    "port": 9002,
+    "status": "online",
+    "last_heartbeat": 1771718336.3788018,
+    "capabilities": [
+      "testing"
+    ],
+    "load": 0.0
+  }
+}

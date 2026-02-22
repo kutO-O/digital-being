@@ -67,7 +67,7 @@ resources:
 api:
   enabled: true
   host: "127.0.0.1"
-  port: 8766
+  port: 8766                     # ИЗМЕНИЛ (было 8765)
 
 dream:
   enabled: true
@@ -160,33 +160,10 @@ meta_cognition:
 # Stage 27: Multi-Agent Communication
 multi_agent:
   enabled: true
-  agent_name: "secondary"
-  specialization: "analysis"
+  agent_name: "secondary"        # ИЗМЕНИЛ
+  specialization: "analysis"     # ИЗМЕНИЛ
   auto_register: true
   
   network:
     host: "localhost"
-    port: 9001  # ← ИЗМЕНИ на 9001
-
-  
-  shared_storage:
-    registry_path: "memory/multi_agent/shared_registry.json"
-    message_storage: "memory/multi_agent/shared_messages"
-  
-  message_processing:
-    poll_interval_sec: 2  # How often to check for messages
-    batch_size: 10  # Max messages to process per poll
-  
-  delegation:
-    enabled: true  # Allow this agent to delegate tasks
-    auto_delegate_complex: false  # Auto-delegate if task is too complex
-    complexity_threshold: 0.7  # Threshold for auto-delegation
-  
-  consensus:
-    enabled: true  # Participate in consensus voting
-    default_timeout_sec: 30  # Default timeout for consensus requests
-  
-  skill_sharing:
-    enabled: true  # Share skills with other agents
-    auto_share_new: false  # Automatically share newly learned skills
-    min_confidence: 0.7  # Minimum confidence to share skill
+    port: 9001                   # ИЗМЕНИЛ (было 9000)

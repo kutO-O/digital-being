@@ -1,0 +1,16 @@
+{
+  "bob_001": {
+    "agent_id": "bob_001",
+    "name": "Bob",
+    "specialization": "coding",
+    "host": "localhost",
+    "port": 9001,
+    "status": "online",
+    "last_heartbeat": 1771717548.5239115,
+    "capabilities": [
+      "coding",
+      "code"
+    ],
+    "load": 0.0
+  }
+}
