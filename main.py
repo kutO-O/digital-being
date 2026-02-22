@@ -253,13 +253,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     initialize_default_tools(tool_registry)
     logger.info(f"ToolRegistry initialized with {len(tool_registry.list_tools())} tools")
     
-    # Advanced Memory Systems - SemanticMemory uses state_path, not lance_path
+    # Advanced Memory Systems - all use state_path
     semantic_memory = SemanticMemory(state_path=ROOT_DIR / "memory")
-    memory_retrieval = MemoryRetrieval(
-        episodic=episodic_memory,
-        semantic=semantic_memory,
-        vector=vector_memory
-    )
+    memory_retrieval = MemoryRetrieval(state_path=ROOT_DIR / "memory")
     
     # Belief and Cognitive Systems
     belief_system = BeliefSystem(state_path=ROOT_DIR / "memory" / "beliefs.json")
