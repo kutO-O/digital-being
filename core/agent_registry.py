@@ -36,7 +36,7 @@ class AgentInfo:
     def from_dict(cls, data: dict) -> AgentInfo:
         return cls(**data)
     
-    def is_alive(self, timeout: float = 30.0) -> bool:
+    def is_alive(self, timeout: float = 300.0) -> bool:  # ✅ FIX: 5 минут вместо 30 сек
         """Check if agent is alive based on heartbeat."""
         return (time.time() - self.last_heartbeat) < timeout
 
@@ -146,7 +146,7 @@ class AgentRegistry:
         self._save()
         return True
     
-    def cleanup_stale(self, timeout: float = 60.0) -> int:
+    def cleanup_stale(self, timeout: float = 600.0) -> int:  # ✅ FIX: 10 минут timeout
         """Remove stale agents that haven't sent heartbeat."""
         stale = [
             agent_id for agent_id, agent in self._agents.items()
@@ -179,11 +179,21 @@ class AgentRegistry:
         
         try:
             data = json.loads(self._registry_file.read_text(encoding="utf-8"))
-            self._agents = {
-                agent_id: AgentInfo.from_dict(agent_data)
-                for agent_id, agent_data in data.items()
-            }
+            current_time = time.time()  # ✅ FIX: Получаем текущее время
+            
+            for agent_id, agent_data in data.items():
+                # ✅ FIX: Обновляем heartbeat при загрузке чтобы агенты были "alive"
+                if agent_data.get('status') == 'online':
+                    agent_data['last_heartbeat'] = current_time
+                
+                self._agents[agent_id] = AgentInfo.from_dict(agent_data)
+            
             log.info(f"Loaded {len(self._agents)} agents from registry.")
+            
+            # ✅ FIX: Логируем каждого агента
+            for agent_id, agent in self._agents.items():
+                log.info(f"  - {agent.name} ({agent.specialization}) - status: {agent.status}")
+                
         except Exception as e:
             log.error(f"Failed to load registry: {e}")
     
