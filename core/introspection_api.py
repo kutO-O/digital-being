@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 27.5: Added static file serving for Web UI.
+Stage 27.5: Added Web UI + Chat endpoints.
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ class IntrospectionAPI:
         self._host, self._port, self._c, self._start_time = host, port, components, start_time
         self._runner, self._site = None, None
         self._web_ui_dir = Path(__file__).parent.parent / "web_ui"
+        self._project_root = Path(__file__).parent.parent
 
     async def start(self) -> None:
         if web is None:
@@ -60,6 +61,10 @@ class IntrospectionAPI:
         app.router.add_get("/style.css", self._handle_css)
         app.router.add_get("/app.js", self._handle_js)
         app.router.add_get("/README.md", self._handle_readme)
+        
+        # Chat endpoints
+        app.router.add_get("/chat/outbox", self._handle_chat_outbox)
+        app.router.add_post("/chat/send", self._handle_chat_send)
         
         # API endpoints
         app.router.add_get("/status", self._handle_status)
@@ -155,6 +160,56 @@ class IntrospectionAPI:
         except Exception as e:
             log.error(f"Error serving README.md: {e}")
             return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_chat_outbox(self, request: web.Request) -> web.Response:
+        """GET /chat/outbox - Read outbox.txt"""
+        try:
+            outbox_path = self._project_root / "outbox.txt"
+            if not outbox_path.exists():
+                return self._json({"messages": []})
+            
+            content = outbox_path.read_text(encoding="utf-8")
+            
+            # Parse messages
+            messages = []
+            for block in content.split("\n\n--- ["):
+                if not block.strip():
+                    continue
+                if "] Digital Being ---" in block:
+                    parts = block.split("] Digital Being ---\n", 1)
+                    if len(parts) == 2:
+                        timestamp = parts[0].strip()
+                        message = parts[1].strip()
+                        messages.append({
+                            "timestamp": timestamp,
+                            "message": message
+                        })
+            
+            return self._json({"messages": messages})
+        except Exception as e:
+            log.error(f"Error reading outbox: {e}")
+            return self._error(e)
+
+    async def _handle_chat_send(self, request: web.Request) -> web.Response:
+        """POST /chat/send - Write to inbox.txt"""
+        try:
+            data = await request.json()
+            message = data.get("message", "").strip()
+            
+            if not message:
+                return self._json({"error": "Empty message"})
+            
+            inbox_path = self._project_root / "memory" / "inbox.txt"
+            inbox_path.parent.mkdir(exist_ok=True)
+            
+            # Append message
+            with inbox_path.open("a", encoding="utf-8") as f:
+                f.write(f"\n{message}\n")
+            
+            return self._json({"success": True, "message": "Сообщение добавлено в inbox.txt"})
+        except Exception as e:
+            log.error(f"Error writing to inbox: {e}")
+            return self._error(e)
 
     async def _handle_multi_agent(self, request: web.Request) -> web.Response:
         """GET /multi-agent - Stage 27"""
