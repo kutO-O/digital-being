@@ -11,12 +11,14 @@ Features:
   - Circuit breaker pattern for cascading failure prevention
   - LLM response cache (5-10x speedup for repeated prompts)
   - Rate limiting (token bucket) to prevent overload
+  - Prometheus metrics for full observability
 
 Changelog:
   TD-006 fix — added retry logic with exponential backoff for reliability.
   TD-016 fix — integrated circuit breaker for fault tolerance.
   TD-021 fix — added LLM response cache for performance.
   TD-015 fix — added rate limiter to prevent overload.
+  TD-013 fix — integrated Prometheus metrics for observability.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from typing import Any
 from core.circuit_breaker import CircuitBreaker, CircuitBreakerOpen, get_registry
 from core.llm_cache import LLMCache
 from core.rate_limiter import MultiRateLimiter
+from core.metrics import get_metrics
 
 log = logging.getLogger("digital_being.ollama_client")
 
@@ -87,6 +90,9 @@ class OllamaClient:
             burst=rate_cfg.get("embed_burst", 50),
         )
 
+        # TD-013: Prometheus metrics
+        self._metrics = get_metrics()
+
         # Lazy-import ollama so the rest of the system works even if
         # the package is not installed.
         try:
@@ -102,7 +108,8 @@ class OllamaClient:
                 f"max_retries={self._max_retries} "
                 f"circuit_breaker=enabled "
                 f"cache=enabled "
-                f"rate_limiter=enabled"
+                f"rate_limiter=enabled "
+                f"metrics=enabled"
             )
         except ImportError:
             self._ollama = None  # type: ignore[assignment]
@@ -188,42 +195,61 @@ class OllamaClient:
         Returns the response text, or "" on any error.
         Counts against the per-tick budget.
         Protected by: rate limiter → cache → circuit breaker → retry logic.
+        All operations tracked in Prometheus metrics.
         """
         if self._client is None:
             return ""
         if not self._check_budget():
             return ""
 
-        # TD-015: Check rate limit first
-        if not self._rate_limiters.acquire("chat"):
-            log.warning("Chat rate limit exceeded - request blocked")
-            return ""
+        start_time = time.time()
+        cached = False
+        success = False
 
-        # TD-021: Check cache
-        cached = self._cache.get(prompt, system)
-        if cached is not None:
-            log.debug(f"Cache HIT for chat prompt (len={len(prompt)})")
-            return cached
-
-        messages: list[dict[str, str]] = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
-
-        self.calls_this_tick += 1
-        
-        def _do_chat_with_retry():
-            def _do_chat():
-                response = self._client.chat(
-                    model=self._strategy_model,
-                    messages=messages,
-                    options={"num_predict": 512},
-                )
-                return response["message"]["content"]
-            
-            return self._retry_with_backoff(_do_chat, "chat")
-        
         try:
+            # TD-015: Check rate limit first
+            if not self._rate_limiters.acquire("chat"):
+                log.warning("Chat rate limit exceeded - request blocked")
+                self._metrics.rate_limit_requests_total.labels(
+                    limiter="chat",
+                    status="rejected"
+                ).inc()
+                return ""
+            
+            self._metrics.rate_limit_requests_total.labels(
+                limiter="chat",
+                status="accepted"
+            ).inc()
+
+            # TD-021: Check cache
+            cached_response = self._cache.get(prompt, system)
+            if cached_response is not None:
+                log.debug(f"Cache HIT for chat prompt (len={len(prompt)})")
+                cached = True
+                success = True
+                self._metrics.record_cache_hit("llm")
+                return cached_response
+            
+            self._metrics.record_cache_miss("llm")
+
+            messages: list[dict[str, str]] = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+
+            self.calls_this_tick += 1
+            
+            def _do_chat_with_retry():
+                def _do_chat():
+                    response = self._client.chat(
+                        model=self._strategy_model,
+                        messages=messages,
+                        options={"num_predict": 512},
+                    )
+                    return response["message"]["content"]
+                
+                return self._retry_with_backoff(_do_chat, "chat")
+            
             # TD-016: Wrap in circuit breaker
             text = self._circuit_breaker.call(_do_chat_with_retry)
             
@@ -233,56 +259,95 @@ class OllamaClient:
             
             # Cache the response
             self._cache.set(prompt, system, text)
+            success = True
             
             log.debug(
                 f"chat() call {self.calls_this_tick}/{self._max_calls}: "
                 f"{len(text)} chars returned."
             )
             return text
+            
         except CircuitBreakerOpen as e:
             log.warning(f"OllamaClient.chat() blocked by circuit breaker: {e}")
             self.calls_this_tick -= 1
             return ""
         except Exception as e:
             log.error(f"OllamaClient.chat() failed: {e}")
+            self._metrics.record_error("ollama", type(e).__name__)
             self.calls_this_tick -= 1
             return ""
+        finally:
+            # TD-013: Record metrics
+            duration = time.time() - start_time
+            self._metrics.record_llm_call(
+                model=self._strategy_model,
+                operation="chat",
+                duration=duration,
+                success=success,
+                cached=cached
+            )
 
     def embed(self, text: str) -> list[float]:
         """
         Get text embedding via the embed model.
         Returns [] on any error (no budget check — embeddings are cheap).
         Protected by: rate limiter → circuit breaker → retry logic.
+        All operations tracked in Prometheus metrics.
         """
         if self._client is None:
             return []
         
-        # TD-015: Check rate limit
-        if not self._rate_limiters.acquire("embed"):
-            log.warning("Embed rate limit exceeded - request blocked")
-            return []
-        
-        def _do_embed_with_retry():
-            def _do_embed():
-                response = self._client.embed(
-                    model=self._embed_model,
-                    input=text,
-                )
-                vectors: list[list[float]] = response.get("embeddings", [])
-                return vectors[0] if vectors else []
-            
-            return self._retry_with_backoff(_do_embed, "embed")
-        
+        start_time = time.time()
+        success = False
+
         try:
+            # TD-015: Check rate limit
+            if not self._rate_limiters.acquire("embed"):
+                log.warning("Embed rate limit exceeded - request blocked")
+                self._metrics.rate_limit_requests_total.labels(
+                    limiter="embed",
+                    status="rejected"
+                ).inc()
+                return []
+            
+            self._metrics.rate_limit_requests_total.labels(
+                limiter="embed",
+                status="accepted"
+            ).inc()
+            
+            def _do_embed_with_retry():
+                def _do_embed():
+                    response = self._client.embed(
+                        model=self._embed_model,
+                        input=text,
+                    )
+                    vectors: list[list[float]] = response.get("embeddings", [])
+                    return vectors[0] if vectors else []
+                
+                return self._retry_with_backoff(_do_embed, "embed")
+            
             # TD-016: Wrap in circuit breaker
             result = self._circuit_breaker.call(_do_embed_with_retry)
+            success = result is not None and len(result) > 0
             return result if result is not None else []
+            
         except CircuitBreakerOpen as e:
             log.warning(f"OllamaClient.embed() blocked by circuit breaker: {e}")
             return []
         except Exception as e:
             log.error(f"OllamaClient.embed() failed: {e}")
+            self._metrics.record_error("ollama", type(e).__name__)
             return []
+        finally:
+            # TD-013: Record metrics
+            duration = time.time() - start_time
+            self._metrics.record_llm_call(
+                model=self._embed_model,
+                operation="embed",
+                duration=duration,
+                success=success,
+                cached=False
+            )
 
     def is_available(self) -> bool:
         """
