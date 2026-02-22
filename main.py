@@ -241,10 +241,11 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         min_confidence=time_cfg.get("min_confidence", 0.4)
     )
     
-    ollama = OllamaClient(cfg["ollama"]["base_url"], cfg["ollama"]["strategy_model"])
+    # OllamaClient takes the entire config dict
+    ollama = OllamaClient(cfg)
     
     # Verify Ollama connectivity
-    if not await ollama.ping():
+    if not ollama.is_available():
         logger.warning("Ollama is not reachable. Some features may not work.")
     
     # Tool System
