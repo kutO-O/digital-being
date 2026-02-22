@@ -15,6 +15,7 @@ Design rules:
 
 Changelog:
   Stage 8 — added get_episodes_by_type() for reflect action and StrategyEngine novelty.
+  API Fix — added count() method for IntrospectionAPI compatibility.
 """
 
 from __future__ import annotations
@@ -256,6 +257,15 @@ class EpisodicMemory:
     # ──────────────────────────────────────────────────────────────
     # Read methods
     # ──────────────────────────────────────────────────────────────
+    def count(self) -> int:
+        """Return total number of episodes. Used by IntrospectionAPI."""
+        try:
+            row = self._conn.execute("SELECT COUNT(*) as cnt FROM episodes").fetchone()
+            return row["cnt"] if row else 0
+        except sqlite3.Error as e:
+            log.error(f"[count] DB error: {e}")
+            return 0
+
     def get_recent_episodes(self, limit: int = 20) -> list[dict]:
         """Return the last N episodes, newest first."""
         try:
