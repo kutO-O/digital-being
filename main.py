@@ -543,30 +543,17 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         
         # ========== Stage 28: Advanced Multi-Agent (NEW!) ==========
         # Integrate task delegation, consensus, roles
-        task_delegation = TaskDelegation(
-            agent_id=agent_id,
-            message_broker=multi_agent_coordinator._message_broker,
-            state_path=storage_dir / "multi_agent"
-        )
-        consensus_builder = ConsensusBuilder(
-            agent_id=agent_id,
-            message_broker=multi_agent_coordinator._message_broker,
-            state_path=storage_dir / "multi_agent"
-        )
-        agent_role_manager = AgentRoleManager(agent_id, storage_dir / "multi_agent")
+        
       # FIX: Use AgentRoleManager
         
         # Attach to coordinator
-        multi_agent_coordinator._task_delegation = task_delegation
-        multi_agent_coordinator._consensus_builder = consensus_builder
-        multi_agent_coordinator._agent_roles = agent_role_manager  # FIX: Store as _agent_roles
-        
+       
         # Get stats before assigning role
-        td_stats = task_delegation.get_stats()
-        cb_stats = consensus_builder.get_stats()
+        td_stats = multi_agent_coordinator._task_delegation.get_stats()
+        cb_stats = multi_agent_coordinator._consensus_builder.get_stats()
         
-        logger.info(f"⚙️  TaskDelegation ready. active={td_stats['active_tasks']} completed={td_stats['completed_tasks']}")
-        logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['total_proposals']} approved={cb_stats['approved']}")
+        logger.info(f"⚙️  TaskDelegation ready. created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
+        logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['proposals_created']} decisions={cb_stats['decisions_made']}")
         logger.info(f"🎭 AgentRoleManager ready for agent {agent_id[:20]}...")
         
     elif multi_agent_enabled and not skill_library:
@@ -802,8 +789,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if multi_agent_coordinator:
         logger.info(f"  🤝 MultiAgent  : {ma_stats['registry']['online_agents']} agents online")
         if hasattr(multi_agent_coordinator, '_task_delegation'):
-            logger.info(f"  ⚙️  Tasks       : active={td_stats['active_tasks']} completed={td_stats['completed_tasks']}")
-            logger.info(f"  🗳️  Consensus   : proposals={cb_stats['total_proposals']} approved={cb_stats['approved']}")
+            logger.info(f"  ⚙️  Tasks       : created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
+            logger.info(f"  🗳️  Consensus   : proposals={cb_stats['proposals_created']} decisions={cb_stats['decisions_made']}")
     if mem_consolidation:
         logger.info(f"  🧠 LT Memory   : {mc_stats['total_memories']} consolidated, {mc_stats['forgotten_count']} forgotten")
         logger.info(f"  📚 Semantic    : {sm_stats['total_concepts']} concepts, {sm_stats['total_facts']} facts")

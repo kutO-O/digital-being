@@ -166,7 +166,7 @@ skills:
 
 # Stage 27: Multi-Agent Communication (Basic)
 multi_agent:
-  enabled: true  # Disabled by default
+  enabled: false  # Disabled by default
   agent_name: "primary"
   specialization: "general"
   auto_register: true

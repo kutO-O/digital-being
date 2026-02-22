@@ -310,5 +310,149 @@
       "analysis"
     ],
     "load": 0.0
+  },
+  "primary_1771763331": {
+    "agent_id": "primary_1771763331",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771763331.7035744,
+    "capabilities": [
+      "monitoring",
+      "consensus_building",
+      "task_delegation",
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771763518": {
+    "agent_id": "primary_1771763518",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771763518.8158054,
+    "capabilities": [
+      "consensus_building",
+      "general",
+      "monitoring",
+      "task_delegation"
+    ],
+    "load": 0.0
+  },
+  "primary_1771763716": {
+    "agent_id": "primary_1771763716",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771763717.0087087,
+    "capabilities": [
+      "consensus_building",
+      "task_delegation",
+      "general",
+      "monitoring"
+    ],
+    "load": 0.0
+  },
+  "primary_1771764013": {
+    "agent_id": "primary_1771764013",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771764013.9815452,
+    "capabilities": [
+      "general",
+      "task_delegation",
+      "consensus_building",
+      "monitoring"
+    ],
+    "load": 0.0
+  },
+  "primary_1771764260": {
+    "agent_id": "primary_1771764260",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771764260.327562,
+    "capabilities": [
+      "general",
+      "task_delegation",
+      "consensus_building",
+      "monitoring"
+    ],
+    "load": 0.0
+  },
+  "primary_1771764396": {
+    "agent_id": "primary_1771764396",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771764396.93619,
+    "capabilities": [
+      "task_delegation",
+      "monitoring",
+      "general",
+      "consensus_building"
+    ],
+    "load": 0.0
+  },
+  "primary_1771764462": {
+    "agent_id": "primary_1771764462",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771764462.9324024,
+    "capabilities": [
+      "consensus_building",
+      "task_delegation",
+      "monitoring",
+      "general"
+    ],
+    "load": 0.0
+  },
+  "primary_1771765414": {
+    "agent_id": "primary_1771765414",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771765414.861783,
+    "capabilities": [
+      "consensus_building",
+      "general",
+      "task_delegation",
+      "monitoring"
+    ],
+    "load": 0.0
+  },
+  "primary_1771765640": {
+    "agent_id": "primary_1771765640",
+    "name": "primary",
+    "specialization": "general",
+    "host": "localhost",
+    "port": 9000,
+    "status": "online",
+    "last_heartbeat": 1771765640.4199922,
+    "capabilities": [
+      "task_delegation",
+      "general",
+      "consensus_building",
+      "monitoring"
+    ],
+    "load": 0.0
   }
 }

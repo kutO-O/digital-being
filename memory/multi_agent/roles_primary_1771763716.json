@@ -1,0 +1,12 @@
+{
+  "current_role": "coordinator",
+  "role_history": [],
+  "role_performance": {
+    "coordinator": {
+      "tasks_completed": 0,
+      "success_rate": 0.0,
+      "avg_quality": 0.0
+    }
+  },
+  "tasks_by_role": {}
+}

@@ -11,7 +11,7 @@ import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
+from core.multi_agent.agent_roles import AgentRoleManager, AgentRole, ROLE_DEFINITIONS
 try:
     from aiohttp import web
 except ImportError:
@@ -241,16 +241,21 @@ class IntrospectionAPI:
             if not multi_agent:
                 return self._json({"error": "MultiAgentCoordinator not available"})
             
-            agent_roles = multi_agent._agent_roles
+            agent_roles = multi_agent._role_manager  # ✅ ПРАВИЛЬНО
             if not agent_roles:
                 return self._json({"error": "AgentRoles not initialized"})
             
-            roles_info = agent_roles.get_all_roles()
-            stats = agent_roles.get_stats()
-            
+            current_role = agent_roles.get_current_role()
+            capabilities = agent_roles.get_capabilities()
+            preferred_tasks = agent_roles.get_preferred_tasks()
+            stats = agent_roles.get_all_stats()
+
             return self._json({
-                "roles": roles_info,
-                "stats": stats
+                "current_role": current_role,
+                "capabilities": capabilities,
+                "preferred_tasks": preferred_tasks,
+                "stats": stats,
+                "available_roles": [role.value for role in AgentRole]  # Все доступные роли
             })
         except Exception as e:
             return self._error(e)
@@ -266,8 +271,9 @@ class IntrospectionAPI:
             if not task_delegation:
                 return self._json({"error": "TaskDelegation not initialized"})
             
-            active = task_delegation.get_active_tasks()
-            completed = task_delegation._state.get("completed_tasks", [])[-10:]  # Last 10
+            active = task_delegation.get_pending_tasks()  # ✅ правильный метод
+            completed = [t for t in task_delegation._state.get("tasks_created", []) 
+                        if t.get("status") == "completed"][-10:]
             stats = task_delegation.get_stats()
             
             return self._json({
@@ -289,8 +295,9 @@ class IntrospectionAPI:
             if not consensus:
                 return self._json({"error": "ConsensusBuilder not initialized"})
             
-            active = consensus.get_active_proposals()
-            recent = consensus._state.get("proposals", [])[-5:]  # Last 5
+            active = [p for p in consensus._state.get("proposals_created", []) 
+                    if p.get("status") == "open"]
+            recent = consensus._state.get("proposals_created", [])[-5:]
             stats = consensus.get_stats()
             
             return self._json({
@@ -317,7 +324,7 @@ class IntrospectionAPI:
                 return self._json({"error": "Missing required fields"})
             
             consensus = multi_agent._consensus_builder
-            consensus.cast_vote(proposal_id, agent_id, vote)
+            consensus.cast_vote(proposal_id, vote, weight=1.0, reasoning="")
             
             # Check if resolved
             result = consensus.get_result(proposal_id)
