@@ -60,12 +60,16 @@ def spawn_agents():
         with open(registry_path, "r", encoding="utf-8") as f:
             registry = json.load(f)
     else:
-        registry = {"agents": []}
+        registry = {}
+    
+    # Убедиться, что есть ключ 'agents'
+    if "agents" not in registry:
+        registry["agents"] = []
     
     # Добавить новых агентов
     for agent in agents_to_create:
         # Проверить, не существует ли уже
-        exists = any(a["id"] == agent["id"] for a in registry["agents"])
+        exists = any(a.get("id") == agent["id"] for a in registry["agents"])
         if not exists:
             registry["agents"].append(agent)
             print(f"✅ Создан агент: {agent['name']} ({agent['role']})")
