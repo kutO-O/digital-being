@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 27: Fixed episode count for multi-agent integration.
+Stage 27.5: Added static file serving for Web UI.
 """
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -25,43 +26,42 @@ if TYPE_CHECKING:
     from core.goal_persistence import GoalPersistence
     from core.memory.episodic import EpisodicMemory
     from core.memory.vector_memory import VectorMemory
-    from core.meta_cognition import MetaCognition  # Stage 24
+    from core.meta_cognition import MetaCognition
     from core.milestones import Milestones
     from core.narrative_engine import NarrativeEngine
     from core.ollama_client import OllamaClient
     from core.reflection_engine import ReflectionEngine
     from core.self_modification import SelfModificationEngine
     from core.shell_executor import ShellExecutor
-    from core.skill_library import SkillLibrary  # Stage 26
+    from core.skill_library import SkillLibrary
     from core.strategy_engine import StrategyEngine
-    from core.time_perception import TimePerception  # Stage 22
+    from core.time_perception import TimePerception
     from core.value_engine import ValueEngine
 
 log = logging.getLogger("digital_being.introspection_api")
 
 _CORS_HEADERS = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type"}
 
-def _count_episodes(mem: "EpisodicMemory") -> int:
-    """Count total episodes using SQL query."""
-    try:
-        if mem._conn:
-            row = mem._conn.execute("SELECT COUNT(*) as cnt FROM episodes").fetchone()
-            return row["cnt"] if row else 0
-        return 0
-    except Exception as e:
-        log.error(f"Failed to count episodes: {e}")
-        return 0
-
 class IntrospectionAPI:
     def __init__(self, host: str, port: int, components: dict, start_time: float) -> None:
         self._host, self._port, self._c, self._start_time = host, port, components, start_time
         self._runner, self._site = None, None
+        self._web_ui_dir = Path(__file__).parent.parent / "web_ui"
 
     async def start(self) -> None:
         if web is None:
             log.error("IntrospectionAPI: aiohttp is not installed. Run: pip install aiohttp")
             return
         app = web.Application(middlewares=[self._cors_middleware])
+        
+        # Web UI static files
+        app.router.add_get("/", self._handle_index)
+        app.router.add_get("/index.html", self._handle_index)
+        app.router.add_get("/style.css", self._handle_css)
+        app.router.add_get("/app.js", self._handle_js)
+        app.router.add_get("/README.md", self._handle_readme)
+        
+        # API endpoints
         app.router.add_get("/status", self._handle_status)
         app.router.add_get("/memory", self._handle_memory)
         app.router.add_get("/values", self._handle_values)
@@ -80,10 +80,11 @@ class IntrospectionAPI:
         app.router.add_get("/contradictions", self._handle_contradictions)
         app.router.add_get("/shell/stats", self._handle_shell_stats)
         app.router.add_post("/shell/execute", self._handle_shell_execute)
-        app.router.add_get("/time", self._handle_time)  # Stage 22
-        app.router.add_get("/meta-cognition", self._handle_meta_cognition)  # Stage 24
-        app.router.add_get("/skills", self._handle_skills)  # Stage 26
-        app.router.add_get("/multi-agent", self._handle_multi_agent)  # Stage 27
+        app.router.add_get("/time", self._handle_time)
+        app.router.add_get("/meta-cognition", self._handle_meta_cognition)
+        app.router.add_get("/skills", self._handle_skills)
+        app.router.add_get("/multi-agent", self._handle_multi_agent)
+        
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
@@ -107,19 +108,67 @@ class IntrospectionAPI:
         response.headers.update(_CORS_HEADERS)
         return response
 
+    async def _handle_index(self, request: web.Request) -> web.Response:
+        """Serve index.html"""
+        try:
+            index_path = self._web_ui_dir / "index.html"
+            if not index_path.exists():
+                return web.Response(text="Web UI not found", status=404)
+            content = index_path.read_text(encoding="utf-8")
+            return web.Response(text=content, content_type="text/html")
+        except Exception as e:
+            log.error(f"Error serving index.html: {e}")
+            return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_css(self, request: web.Request) -> web.Response:
+        """Serve style.css"""
+        try:
+            css_path = self._web_ui_dir / "style.css"
+            if not css_path.exists():
+                return web.Response(text="style.css not found", status=404)
+            content = css_path.read_text(encoding="utf-8")
+            return web.Response(text=content, content_type="text/css")
+        except Exception as e:
+            log.error(f"Error serving style.css: {e}")
+            return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_js(self, request: web.Request) -> web.Response:
+        """Serve app.js"""
+        try:
+            js_path = self._web_ui_dir / "app.js"
+            if not js_path.exists():
+                return web.Response(text="app.js not found", status=404)
+            content = js_path.read_text(encoding="utf-8")
+            return web.Response(text=content, content_type="application/javascript")
+        except Exception as e:
+            log.error(f"Error serving app.js: {e}")
+            return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_readme(self, request: web.Request) -> web.Response:
+        """Serve README.md"""
+        try:
+            readme_path = self._web_ui_dir / "README.md"
+            if not readme_path.exists():
+                return web.Response(text="README.md not found", status=404)
+            content = readme_path.read_text(encoding="utf-8")
+            return web.Response(text=content, content_type="text/markdown")
+        except Exception as e:
+            log.error(f"Error serving README.md: {e}")
+            return web.Response(text=f"Error: {e}", status=500)
+
     async def _handle_multi_agent(self, request: web.Request) -> web.Response:
         """GET /multi-agent - Stage 27"""
         try:
-            coordinator = self._c.get("multi_agent_coordinator")
-            if not coordinator:
+            multi_agent = self._c.get("multi_agent")
+            if not multi_agent:
                 return self._json({"error": "MultiAgentCoordinator not available"})
             
-            stats = coordinator.get_stats()
-            online_agents = coordinator.get_online_agents()
+            stats = multi_agent.get_stats()
+            online = multi_agent.get_online_agents()
             
             return self._json({
-                "stats": stats,
-                "online_agents": [{"agent_id": a.agent_id, "name": a.name, "specialization": a.specialization, "status": a.status, "capabilities": a.capabilities} for a in online_agents],
+                "online_agents": online,
+                "stats": stats
             })
         except Exception as e:
             return self._error(e)
@@ -131,12 +180,8 @@ class IntrospectionAPI:
             if not skill_lib:
                 return self._json({"error": "SkillLibrary not available"})
             
-            # Get all skills - _skills is a list
             all_skills = skill_lib._skills
-            
-            # Sort by confidence (descending)
             sorted_skills = sorted(all_skills, key=lambda x: x.get("confidence", 0.0), reverse=True)
-            
             stats = skill_lib.get_stats()
             
             return self._json({
@@ -225,13 +270,29 @@ class IntrospectionAPI:
             ollama = self._c.get("ollama")
             gp = self._c.get("goal_persistence")
             attn = self._c.get("attention_system")
-            payload = {"uptime_sec": int(uptime), "tick_count": getattr(self._c.get("heavy_tick"), "_tick_count", 0),
-                       "mode": values.get_mode() if values else "unknown", "ollama_available": ollama.is_available() if ollama else False,
-                       "episode_count": _count_episodes(mem) if mem else 0, "attention_focus": attn.get_focus_summary() if attn else ""}
+            emotions = self._c.get("emotion_engine")
+            
+            payload = {
+                "uptime_sec": int(uptime),
+                "tick_count": getattr(self._c.get("heavy_tick"), "_tick_count", 0),
+                "mode": values.get_mode() if values else "unknown",
+                "ollama_available": ollama.is_available() if ollama else False,
+                "episode_count": mem.count() if mem else 0,
+                "attention_focus": attn.get_focus_summary() if attn else ""
+            }
+            
             if gp:
                 ag = gp.get_active()
                 payload["current_goal"] = ag.get("goal", "") if ag else "no active goal"
                 payload["goal_stats"] = gp.get_stats()
+            
+            if emotions:
+                dominant_name, dominant_val = emotions.get_dominant()
+                payload["emotions"] = {
+                    "dominant": {"name": dominant_name, "value": dominant_val},
+                    "all": emotions.get_state()
+                }
+            
             return self._json(payload)
         except Exception as e:
             return self._error(e)
@@ -240,7 +301,7 @@ class IntrospectionAPI:
         try:
             mem = self._c.get("episodic")
             vec = self._c.get("vector_memory")
-            payload = {"episode_count": _count_episodes(mem) if mem else 0, "vector_count": vec.count() if vec else 0,
+            payload = {"episode_count": mem.count() if mem else 0, "vector_count": vec.count() if vec else 0,
                        "recent": mem.get_recent_episodes(10) if mem else []}
             return self._json(payload)
         except Exception as e:
@@ -293,7 +354,7 @@ class IntrospectionAPI:
             mem = self._c.get("episodic")
             if not mem:
                 return self._json({"error": "EpisodicMemory not available"})
-            limit = int(request.query.get("limit", "20"))
+            limit = int(request.query.get("limit", "50"))
             event_type = request.query.get("event_type", "")
             if event_type:
                 episodes = mem.get_episodes_by_type(event_type, limit=limit)
