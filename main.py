@@ -48,7 +48,7 @@ from core.multi_agent_coordinator import MultiAgentCoordinator
 # Stage 28 - Advanced Multi-Agent (NEW!)
 from core.multi_agent.task_delegation import TaskDelegation
 from core.multi_agent.consensus_builder import ConsensusBuilder
-from core.multi_agent.agent_roles import AgentRoles
+from core.multi_agent.agent_roles import AgentRoleManager  # FIX: Changed from AgentRoles
 
 # Stage 29 - Long-term Memory (NEW!)
 from core.memory.memory_consolidation import MemoryConsolidation as LongTermMemoryConsolidation
@@ -545,26 +545,20 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         # Integrate task delegation, consensus, roles
         task_delegation = TaskDelegation(storage_dir / "multi_agent")
         consensus_builder = ConsensusBuilder(storage_dir / "multi_agent")
-        agent_roles = AgentRoles(storage_dir / "multi_agent")
+        agent_role_manager = AgentRoleManager(agent_id, storage_dir / "multi_agent")  # FIX: Use AgentRoleManager
         
         # Attach to coordinator
         multi_agent_coordinator._task_delegation = task_delegation
         multi_agent_coordinator._consensus_builder = consensus_builder
-        multi_agent_coordinator._agent_roles = agent_roles
+        multi_agent_coordinator._agent_roles = agent_role_manager  # FIX: Store as _agent_roles
         
-        # Assign role to this agent
-        agent_roles.assign_role(
-            agent_id=agent_id,
-            role="coordinator" if "coordinator" in multi_agent_cfg.get("agent_name", "").lower() else "specialist"
-        )
-        
+        # Get stats before assigning role
         td_stats = task_delegation.get_stats()
         cb_stats = consensus_builder.get_stats()
-        ar_stats = agent_roles.get_stats()
         
         logger.info(f"⚙️  TaskDelegation ready. active={td_stats['active_tasks']} completed={td_stats['completed_tasks']}")
         logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['total_proposals']} approved={cb_stats['approved']}")
-        logger.info(f"🎭 AgentRoles ready. total_roles={ar_stats['total_roles']} assignments={ar_stats['role_assignments']}")
+        logger.info(f"🎭 AgentRoleManager ready for agent {agent_id[:20]}...")
         
     elif multi_agent_enabled and not skill_library:
         logger.warning("🤝 MultiAgent requires SkillLibrary. Enable skills to use multi-agent features.")
@@ -801,7 +795,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         if hasattr(multi_agent_coordinator, '_task_delegation'):
             logger.info(f"  ⚙️  Tasks       : active={td_stats['active_tasks']} completed={td_stats['completed_tasks']}")
             logger.info(f"  🗳️  Consensus   : proposals={cb_stats['total_proposals']} approved={cb_stats['approved']}")
-            logger.info(f"  🎭 Roles       : {ar_stats['total_roles']} defined, {ar_stats['role_assignments']} assigned")
     if mem_consolidation:
         logger.info(f"  🧠 LT Memory   : {mc_stats['total_memories']} consolidated, {mc_stats['forgotten_count']} forgotten")
         logger.info(f"  📚 Semantic    : {sm_stats['total_concepts']} concepts, {sm_stats['total_facts']} facts")
