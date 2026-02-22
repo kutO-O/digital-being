@@ -5,6 +5,7 @@ const REFRESH_INTERVAL = 5000; // 5 seconds
 // Global state
 let refreshIntervals = {};
 let currentView = 'dashboard';
+let lastMessageCount = 0;
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
@@ -87,11 +88,11 @@ function updateConnectionStatus(connected) {
     if (connected) {
         badge.classList.add('connected');
         badge.classList.remove('error');
-        badge.querySelector('span:last-child').textContent = 'Connected';
+        badge.querySelector('span:last-child').textContent = 'Подключено';
     } else {
         badge.classList.remove('connected');
         badge.classList.add('error');
-        badge.querySelector('span:last-child').textContent = 'Disconnected';
+        badge.querySelector('span:last-child').textContent = 'Отключено';
     }
 }
 
@@ -114,15 +115,15 @@ async function loadDashboard() {
         document.getElementById('uptime').textContent = formatUptime(status.uptime_sec);
         document.getElementById('tickCount').textContent = status.tick_count;
         document.getElementById('episodeCount').textContent = status.episode_count;
-        document.getElementById('mode').textContent = status.mode;
+        document.getElementById('mode').textContent = translateMode(status.mode);
         
         // Update current goal
         document.getElementById('currentGoal').innerHTML = `
-            <div class="metric-value">${status.current_goal || 'No active goal'}</div>
+            <div class="metric-value">${escapeHtml(status.current_goal) || 'Нет активной цели'}</div>
             ${status.goal_stats ? `
                 <div class="text-muted" style="margin-top: 12px;">
-                    <div>✅ Completed: ${status.goal_stats.total_completed}</div>
-                    <div>🔄 Resumes: ${status.goal_stats.resume_count}</div>
+                    <div>✅ Завершено: ${status.goal_stats.total_completed}</div>
+                    <div>🔄 Возобновлений: ${status.goal_stats.resume_count}</div>
                 </div>
             ` : ''}
         `;
@@ -130,21 +131,21 @@ async function loadDashboard() {
         // Update emotions
         const dominant = emotions.dominant;
         document.getElementById('emotionsWidget').innerHTML = `
-            <div class="metric-value">${dominant.name}</div>
+            <div class="metric-value">${translateEmotion(dominant.name)}</div>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: ${dominant.value * 100}%"></div>
             </div>
-            <div class="text-muted" style="margin-top: 12px;">${emotions.tone_modifier}</div>
+            <div class="text-muted" style="margin-top: 12px;">${escapeHtml(emotions.tone_modifier)}</div>
         `;
         
         // Update recent activity
         const activityHtml = episodes.episodes.map(ep => `
             <div class="activity-item">
                 <div class="time">${new Date(ep.timestamp).toLocaleString('ru-RU')}</div>
-                <div class="event"><strong>${ep.event_type}</strong>: ${ep.description}</div>
+                <div class="event"><strong>${ep.event_type}</strong>: ${escapeHtml(ep.description)}</div>
             </div>
         `).join('');
-        document.getElementById('recentActivity').innerHTML = activityHtml || '<div class="text-muted">No recent activity</div>';
+        document.getElementById('recentActivity').innerHTML = activityHtml || '<div class="text-muted">Нет недавней активности</div>';
         
         updateConnectionStatus(true);
     } catch (error) {
@@ -156,7 +157,30 @@ async function loadDashboard() {
 function formatUptime(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+    return `${hours}ч ${minutes}м`;
+}
+
+function translateMode(mode) {
+    const modes = {
+        'normal': 'Нормальный',
+        'exploration': 'Исследование',
+        'crisis': 'Кризис',
+        'growth': 'Рост'
+    };
+    return modes[mode] || mode;
+}
+
+function translateEmotion(emotion) {
+    const emotions = {
+        'satisfaction': 'Удовлетворение',
+        'curiosity': 'Любопытство',
+        'frustration': 'Разочарование',
+        'enthusiasm': 'Энтузиазм',
+        'confusion': 'Замешательство',
+        'anxiety': 'Тревога',
+        'joy': 'Радость'
+    };
+    return emotions[emotion] || emotion;
 }
 
 // Chat
@@ -185,22 +209,37 @@ async function sendMessage() {
     input.value = '';
     
     try {
-        // Write to inbox.txt (через API нужно будет добавить endpoint)
-        // Пока просто показываем что сообщение отправлено
-        addChatMessage('system', `✅ Сообщение добавлено в inbox.txt. Digital Being ответит в следующем тике.`);
+        const response = await fetch(`${API_BASE}/chat/send`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message})
+        });
         
-        // TODO: Implement POST /inbox endpoint in introspection_api.py
+        const result = await response.json();
+        
+        if (result.success) {
+            addChatMessage('system', `✅ ${result.message}`);
+        } else {
+            addChatMessage('system', `❌ Ошибка: ${result.error}`);
+        }
     } catch (error) {
-        addChatMessage('system', `❌ Ошибка: ${error.message}`);
+        addChatMessage('system', `❌ Ошибка отправки: ${error.message}`);
     }
 }
 
-function addChatMessage(sender, content) {
+function addChatMessage(sender, content, timestamp = null) {
     const container = document.getElementById('chatMessages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ${sender}`;
+    
+    let timeHtml = '';
+    if (timestamp) {
+        timeHtml = `<div class="message-time">${timestamp}</div>`;
+    }
+    
     messageDiv.innerHTML = `
         <div class="message-content">
+            ${timeHtml}
             <p>${escapeHtml(content)}</p>
         </div>
     `;
@@ -210,9 +249,29 @@ function addChatMessage(sender, content) {
 
 async function loadChat() {
     try {
-        // Load outgoing messages from SocialLayer
-        // This would show Digital Being's responses
-        // TODO: Add endpoint to get recent outbox messages
+        const response = await fetch(`${API_BASE}/chat/outbox`);
+        const data = await response.json();
+        
+        const messages = data.messages || [];
+        
+        // Only update if new messages arrived
+        if (messages.length !== lastMessageCount) {
+            lastMessageCount = messages.length;
+            
+            const container = document.getElementById('chatMessages');
+            
+            // Keep system welcome message
+            const welcomeMsg = container.querySelector('.chat-message.system');
+            container.innerHTML = '';
+            if (welcomeMsg) {
+                container.appendChild(welcomeMsg);
+            }
+            
+            // Add all messages from outbox
+            messages.forEach(msg => {
+                addChatMessage('assistant', msg.message, msg.timestamp);
+            });
+        }
     } catch (error) {
         console.error('Chat load error:', error);
     }
@@ -256,10 +315,10 @@ async function loadMemory() {
             </div>
         `).join('');
         
-        document.getElementById('memoryList').innerHTML = html || '<div class="text-muted">No episodes found</div>';
+        document.getElementById('memoryList').innerHTML = html || '<div class="text-muted">Эпизодов не найдено</div>';
     } catch (error) {
         console.error('Memory load error:', error);
-        document.getElementById('memoryList').innerHTML = '<div class="text-error">Failed to load memory</div>';
+        document.getElementById('memoryList').innerHTML = '<div class="text-error">Ошибка загрузки памяти</div>';
     }
 }
 
@@ -276,7 +335,7 @@ async function loadAgents() {
         
         if (data.error) {
             document.getElementById('agentsGrid').innerHTML = `<div class="text-muted">${data.error}</div>`;
-            document.getElementById('agentStats').innerHTML = `<div class="text-muted">N/A</div>`;
+            document.getElementById('agentStats').innerHTML = `<div class="text-muted">Недоступно</div>`;
             return;
         }
         
@@ -285,35 +344,35 @@ async function loadAgents() {
             <div class="agent-card">
                 <div class="agent-card-header">
                     <div class="agent-name">🤖 ${agent.name}</div>
-                    <div class="agent-status ${agent.status}">${agent.status}</div>
+                    <div class="agent-status ${agent.status}">${translateStatus(agent.status)}</div>
                 </div>
-                <div class="agent-specialization">${agent.specialization}</div>
+                <div class="agent-specialization">${translateSpecialization(agent.specialization)}</div>
                 <div class="agent-capabilities">
                     ${agent.capabilities.map(cap => `<span class="capability-tag">${cap}</span>`).join('')}
                 </div>
             </div>
         `).join('');
         
-        document.getElementById('agentsGrid').innerHTML = agentsHtml || '<div class="text-muted">No agents online</div>';
+        document.getElementById('agentsGrid').innerHTML = agentsHtml || '<div class="text-muted">Нет агентов онлайн</div>';
         
         // Render stats
         const stats = data.stats;
         document.getElementById('agentStats').innerHTML = `
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
                 <div>
-                    <div class="text-muted">Total Messages</div>
+                    <div class="text-muted">Всего сообщений</div>
                     <div class="metric-value">${stats.total_messages_sent}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Skills Shared</div>
+                    <div class="text-muted">Навыков передано</div>
                     <div class="metric-value">${stats.total_skills_shared}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Collaborations</div>
+                    <div class="text-muted">Коллабораций</div>
                     <div class="metric-value">${stats.total_collaborations}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Online Agents</div>
+                    <div class="text-muted">Агентов онлайн</div>
                     <div class="metric-value">${stats.total_agents_registered}</div>
                 </div>
             </div>
@@ -321,6 +380,27 @@ async function loadAgents() {
     } catch (error) {
         console.error('Agents load error:', error);
     }
+}
+
+function translateStatus(status) {
+    const statuses = {
+        'active': 'Активен',
+        'idle': 'Ожидание',
+        'busy': 'Занят',
+        'offline': 'Оффлайн'
+    };
+    return statuses[status] || status;
+}
+
+function translateSpecialization(spec) {
+    const specs = {
+        'analysis': 'Анализ',
+        'planning': 'Планирование',
+        'execution': 'Исполнение',
+        'research': 'Исследования',
+        'testing': 'Тестирование'
+    };
+    return specs[spec] || spec;
 }
 
 // Cognition
@@ -334,14 +414,22 @@ async function loadCognition() {
             fetch(`${API_BASE}/values`).then(r => r.json()),
             fetch(`${API_BASE}/curiosity`).then(r => r.json()),
             fetch(`${API_BASE}/beliefs`).then(r => r.json()),
-            fetch(`${API_BASE}/meta-cognition`).then(r => r.json()).catch(() => ({error: 'N/A'}))
+            fetch(`${API_BASE}/meta-cognition`).then(r => r.json()).catch(() => ({error: 'Недоступно'}))
         ]);
         
         // Values
+        const valueNames = {
+            'stability': 'Стабильность',
+            'accuracy': 'Точность',
+            'growth': 'Рост',
+            'curiosity': 'Любопытство',
+            'boredom': 'Скука'
+        };
+        
         const valuesHtml = Object.entries(values.scores || {}).map(([key, value]) => `
             <div style="margin-bottom: 12px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                    <span>${key}</span>
+                    <span>${valueNames[key] || key}</span>
                     <span class="text-success">${value.toFixed(2)}</span>
                 </div>
                 <div class="progress-bar">
@@ -355,24 +443,24 @@ async function loadCognition() {
         const curiosityHtml = `
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px;">
                 <div>
-                    <div class="text-muted">Open</div>
+                    <div class="text-muted">Открытые</div>
                     <div class="metric-value">${curiosity.stats.open}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Answered</div>
+                    <div class="text-muted">Отвеченные</div>
                     <div class="metric-value">${curiosity.stats.answered}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Total</div>
+                    <div class="text-muted">Всего</div>
                     <div class="metric-value">${curiosity.stats.total_asked}</div>
                 </div>
             </div>
-            <div class="text-muted">Recent Questions:</div>
+            <div class="text-muted">Недавние вопросы:</div>
             ${curiosity.open_questions.slice(0, 3).map(q => `
                 <div style="padding: 8px; background: #252540; border-radius: 6px; margin-top: 8px;">
                     ${escapeHtml(q.question)}
                 </div>
-            `).join('') || '<div class="text-muted">No open questions</div>'}
+            `).join('') || '<div class="text-muted">Нет открытых вопросов</div>'}
         `;
         document.getElementById('curiosityWidget').innerHTML = curiosityHtml;
         
@@ -380,15 +468,15 @@ async function loadCognition() {
         const beliefsHtml = `
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px;">
                 <div>
-                    <div class="text-muted">Active</div>
+                    <div class="text-muted">Активные</div>
                     <div class="metric-value">${beliefs.stats.active}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Strong</div>
+                    <div class="text-muted">Сильные</div>
                     <div class="metric-value">${beliefs.stats.strong}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Total</div>
+                    <div class="text-muted">Всего</div>
                     <div class="metric-value">${beliefs.stats.total_beliefs_formed}</div>
                 </div>
             </div>
@@ -399,7 +487,7 @@ async function loadCognition() {
                         <span class="text-success">${b.confidence.toFixed(2)}</span>
                     </div>
                 </div>
-            `).join('') || '<div class="text-muted">No beliefs formed yet</div>'}
+            `).join('') || '<div class="text-muted">Убеждений пока нет</div>'}
         `;
         document.getElementById('beliefsWidget').innerHTML = beliefsHtml;
         
@@ -410,20 +498,20 @@ async function loadCognition() {
             const metaHtml = `
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px;">
                     <div>
-                        <div class="text-muted">Insights</div>
+                        <div class="text-muted">Инсайты</div>
                         <div class="metric-value">${metaCog.stats.total_insights}</div>
                     </div>
                     <div>
-                        <div class="text-muted">Calibration</div>
+                        <div class="text-muted">Калибровка</div>
                         <div class="metric-value">${metaCog.stats.calibration_score.toFixed(2)}</div>
                     </div>
                 </div>
-                <div class="text-muted">Recent Insights:</div>
+                <div class="text-muted">Недавние инсайты:</div>
                 ${metaCog.recent_insights.slice(0, 2).map(ins => `
                     <div style="padding: 8px; background: #252540; border-radius: 6px; margin-top: 8px; font-size: 13px;">
                         <strong>${ins.insight_type}</strong>: ${escapeHtml(ins.description)}
                     </div>
-                `).join('') || '<div class="text-muted">No insights yet</div>'}
+                `).join('') || '<div class="text-muted">Инсайтов пока нет</div>'}
             `;
             document.getElementById('metaCognitionWidget').innerHTML = metaHtml;
         }
@@ -458,13 +546,13 @@ async function loadSkills() {
                     ${escapeHtml(skill.description)}
                 </div>
                 <div style="display: flex; gap: 8px; font-size: 11px;">
-                    <span class="capability-tag">Uses: ${skill.use_count}</span>
-                    <span class="capability-tag">Success: ${skill.success_count}</span>
+                    <span class="capability-tag">Использований: ${skill.use_count}</span>
+                    <span class="capability-tag">Успешно: ${skill.success_count}</span>
                 </div>
             </div>
         `).join('');
         
-        document.getElementById('skillsList').innerHTML = html || '<div class="text-muted">No skills learned yet</div>';
+        document.getElementById('skillsList').innerHTML = html || '<div class="text-muted">Навыков пока нет</div>';
     } catch (error) {
         console.error('Skills load error:', error);
     }
@@ -492,20 +580,20 @@ async function loadShellStats() {
         const html = `
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
                 <div>
-                    <div class="text-muted">Executed</div>
+                    <div class="text-muted">Выполнено</div>
                     <div class="metric-value">${data.stats.total_executed}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Rejected</div>
+                    <div class="text-muted">Отклонено</div>
                     <div class="metric-value">${data.stats.total_rejected}</div>
                 </div>
                 <div>
-                    <div class="text-muted">Errors</div>
+                    <div class="text-muted">Ошибок</div>
                     <div class="metric-value">${data.stats.total_errors}</div>
                 </div>
             </div>
             <div style="margin-top: 16px;">
-                <div class="text-muted">Allowed directory:</div>
+                <div class="text-muted">Разрешённая директория:</div>
                 <code style="background: #252540; padding: 4px 8px; border-radius: 4px; display: block; margin-top: 4px;">
                     ${data.allowed_dir}
                 </code>
@@ -543,7 +631,7 @@ async function executeShellCommand() {
         
         const resultLine = document.createElement('div');
         resultLine.className = `terminal-line ${result.success ? '' : 'error'}`;
-        resultLine.textContent = result.output || result.error || 'Command executed';
+        resultLine.textContent = result.output || result.error || 'Команда выполнена';
         output.appendChild(resultLine);
         
         output.scrollTop = output.scrollHeight;
@@ -554,7 +642,7 @@ async function executeShellCommand() {
     } catch (error) {
         const errorLine = document.createElement('div');
         errorLine.className = 'terminal-line error';
-        errorLine.textContent = `Error: ${error.message}`;
+        errorLine.textContent = `Ошибка: ${error.message}`;
         output.appendChild(errorLine);
     }
 }
