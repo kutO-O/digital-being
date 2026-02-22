@@ -245,12 +245,12 @@ async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: asy
 # NEW: Multi-agent message polling loop
 async def _multi_agent_loop(coordinator: MultiAgentCoordinator, stop_event: asyncio.Event, logger: logging.Logger) -> None:
     logger.info("🤝 Multi-Agent message polling started.")
-    poll_interval = coordinator.config.get("message_processing", {}).get("poll_interval_sec", 2)
+    poll_interval = coordinator._config.get("message_processing", {}).get("poll_interval_sec", 2)
     while not stop_event.is_set():
         try:
-            messages = coordinator.check_messages()
-            if messages:
-                logger.debug(f"🤝 Processed {len(messages)} messages from network")
+            processed = await coordinator.process_messages()
+            if processed > 0:
+                logger.debug(f"🤝 Processed {processed} messages from network")
         except Exception as e:
             logger.error(f"Multi-agent polling error: {e}")
         await asyncio.sleep(poll_interval)
@@ -486,8 +486,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             config=multi_agent_cfg,
             storage_dir=storage_dir,
         )
-        if multi_agent_cfg.get("auto_register", True):
-            multi_agent_coordinator.register()
+        # Registration happens automatically in __init__ when auto_register=True
         ma_stats = multi_agent_coordinator.get_stats()
         logger.info(f"🤝 MultiAgentCoordinator ready. agent_id={agent_id[:20]}... online_agents={ma_stats['registry']['online_agents']}")
     elif multi_agent_enabled and not skill_library:
