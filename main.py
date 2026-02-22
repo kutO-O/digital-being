@@ -253,11 +253,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     initialize_default_tools(tool_registry)
     logger.info(f"ToolRegistry initialized with {len(tool_registry.list_tools())} tools")
     
-    # Advanced Memory Systems
-    semantic_memory = SemanticMemory(
-        lance_path=Path(cfg["memory"]["semantic_lance"]),
-        ollama_client=ollama
-    )
+    # Advanced Memory Systems - SemanticMemory uses state_path, not lance_path
+    semantic_memory = SemanticMemory(state_path=ROOT_DIR / "memory")
     memory_retrieval = MemoryRetrieval(
         episodic=episodic_memory,
         semantic=semantic_memory,
