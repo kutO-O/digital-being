@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional, Type
-from core.tools.web_search_advanced import execute as web_search_advanced
-register_tool("web_search_advanced", "web", web_search_advanced)
+
 from core.tools.base_tool import BaseTool, ToolCategory, ToolResult
 
 log = logging.getLogger("digital_being.tools.registry")
@@ -101,7 +100,7 @@ class ToolRegistry:
 
         return await tool.safe_execute(**kwargs)
 
-    def get_capabilities(self) -> Dict[str, Any]:  # FIX: `any` -> `Any`
+    def get_capabilities(self) -> Dict[str, Any]:
         """Get capabilities of all registered tools."""
         return {
             "total_tools": len(self._tools),
@@ -136,7 +135,7 @@ class ToolRegistry:
 
         return "\n".join(lines)
 
-    def get_statistics(self) -> Dict[str, Any]:  # FIX: `any` -> `Any`
+    def get_statistics(self) -> Dict[str, Any]:
         """Get usage statistics for all tools."""
         total_executions = sum(
             t._execution_count for t in self._tools.values()
