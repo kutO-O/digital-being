@@ -31,7 +31,7 @@ from core.fault_tolerant_heavy_tick import FaultTolerantHeavyTick
 # NEW: Goal Hierarchy & Tools & Learning
 from core.goal_integration import GoalOrientedBehavior
 from core.tools import ToolRegistry, initialize_default_tools
-from core.learning import LearningEngine, PatternGuidedPlanner
+from core.learning import LearningEngine  # FIX: убран неиспользуемый PatternGuidedPlanner
 
 # NEW: Advanced Cognitive Features
 from core.memory_consolidation import MemoryConsolidation
@@ -104,8 +104,10 @@ def ensure_directories(cfg: dict) -> None:
     ]
     for p in dirs:
         p.mkdir(parents=True, exist_ok=True)
+    # FIX: единообразное построение путей для inbox/outbox
     for key in ("inbox", "outbox"):
-        p = Path(cfg["paths"][key])
+        raw = cfg["paths"][key]
+        p = Path(raw) if Path(raw).is_absolute() else ROOT_DIR / raw
         if not p.exists():
             p.touch()
 
@@ -208,6 +210,16 @@ def make_self_modification_handlers(mem: EpisodicMemory, logger: logging.Logger)
 
 async def _dream_loop(dream: DreamMode, stop_event: asyncio.Event, logger: logging.Logger) -> None:
     logger.info("DreamMode loop started.")
+    # FIX: сначала проверяем should_run() без ожидания при старте
+    if dream.should_run():
+        logger.info("DreamMode: immediate check at startup — starting dream cycle.")
+        try:
+            loop = asyncio.get_running_loop()  # FIX: get_running_loop() вместо get_event_loop()
+            result = await loop.run_in_executor(None, dream.run)
+            if result.get("skipped"):
+                logger.info(f"DreamMode: skipped ({result.get('reason', '?')}).")
+        except Exception as e:
+            logger.error(f"DreamMode loop error: {e}")
     while not stop_event.is_set():
         await asyncio.sleep(300)
         if stop_event.is_set():
@@ -215,7 +227,7 @@ async def _dream_loop(dream: DreamMode, stop_event: asyncio.Event, logger: loggi
         if dream.should_run():
             logger.info("DreamMode: interval elapsed — starting dream cycle.")
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()  # FIX: get_running_loop() вместо get_event_loop()
                 result = await loop.run_in_executor(None, dream.run)
                 if result.get("skipped"):
                     logger.info(f"DreamMode: skipped ({result.get('reason', '?')}).")
@@ -395,8 +407,11 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     social_enabled = bool(social_cfg.get("enabled", True))
     social_layer = None
     if social_enabled:
-        inbox_path = ROOT_DIR / cfg["paths"]["inbox"]
-        outbox_path = ROOT_DIR / cfg["paths"]["outbox"]
+        # FIX: единообразное построение путей
+        inbox_raw = cfg["paths"]["inbox"]
+        outbox_raw = cfg["paths"]["outbox"]
+        inbox_path  = Path(inbox_raw)  if Path(inbox_raw).is_absolute()  else ROOT_DIR / inbox_raw
+        outbox_path = Path(outbox_raw) if Path(outbox_raw).is_absolute() else ROOT_DIR / outbox_raw
         social_layer = SocialLayer(inbox_path=inbox_path, outbox_path=outbox_path, memory_dir=ROOT_DIR / "memory")
         social_layer.load()
         social_stats = social_layer.get_stats()
@@ -418,13 +433,13 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     # ============================================================
     # NEW: 8-Layer Cognitive Architecture + Stage 26
     # ============================================================
-    
+
     # Layer 2: Tool Registry
     tool_registry = ToolRegistry()
     initialize_default_tools(tool_registry, allowed_dirs=[ROOT_DIR / "sandbox", ROOT_DIR / "data"])
     tool_stats = tool_registry.get_statistics()
     logger.info(f"🛠️  ToolRegistry ready. tools={tool_stats['total_tools']} executions={tool_stats.get('total_executions', 0)}")
-    
+
     # Layer 3: Continuous Learning
     learning_engine = LearningEngine(
         memory=mem,
@@ -432,7 +447,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     )
     learning_stats = learning_engine.get_statistics()
     logger.info(f"🧠 LearningEngine ready. patterns={learning_stats.get('total_patterns', 0)}")
-    
+
     # NEW: Stage 26 - Skill Library
     skill_cfg = cfg.get("skills", {})
     skill_enabled = bool(skill_cfg.get("enabled", True))
@@ -444,7 +459,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"📚 SkillLibrary ready. skills={skill_stats['total_skills']} extractions={skill_stats['total_extractions']} uses={skill_stats['total_skill_uses']}")
     else:
         logger.info("📚 SkillLibrary disabled.")
-    
+
     # Layer 4: Memory Consolidation
     consolidation_cfg = cfg.get("consolidation", {})
     consolidation_enabled = bool(consolidation_cfg.get("enabled", True))
@@ -460,7 +475,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"💤 MemoryConsolidation ready. consolidations={consol_stats['total_consolidations']}")
     else:
         logger.info("💤 MemoryConsolidation disabled.")
-    
+
     # Layer 5: Theory of Mind (User Model)
     user_model_cfg = cfg.get("user_model", {})
     user_model_enabled = bool(user_model_cfg.get("enabled", True))
@@ -470,18 +485,25 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"🧠 UserModel ready. interactions={user_model._interaction_count}")
     else:
         logger.info("🧠 UserModel disabled.")
-    
+
+    # Layer 6: Placeholder (reserved for future expansion)
+    logger.info("⬜ Layer 6: reserved for future module.")
+
     # Layer 7: Proactive Behavior
+    # FIX: proactive инициализируется независимо от user_model, передаётся None если user_model отключён
     proactive_cfg = cfg.get("proactive", {})
     proactive_enabled = bool(proactive_cfg.get("enabled", True))
     proactive = None
-    if proactive_enabled and user_model:
-        proactive = ProactiveBehaviorEngine(user_model=user_model, memory=mem)
-        proactive_stats = proactive.get_statistics()
-        logger.info(f"🚀 ProactiveBehavior ready. triggers={len(proactive._triggers)}")
+    if proactive_enabled:
+        if user_model:
+            proactive = ProactiveBehaviorEngine(user_model=user_model, memory=mem)
+            proactive_stats = proactive.get_statistics()
+            logger.info(f"🚀 ProactiveBehavior ready. triggers={len(proactive._triggers)}")
+        else:
+            logger.warning("🚀 ProactiveBehavior disabled: requires UserModel which is disabled.")
     else:
         logger.info("🚀 ProactiveBehavior disabled.")
-    
+
     # Layer 8: Meta-Learning
     meta_learn_cfg = cfg.get("meta_learning", {})
     meta_learn_enabled = bool(meta_learn_cfg.get("enabled", True))
@@ -491,7 +513,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"🔬 MetaOptimizer ready. tests={len(meta_optimizer._ab_tests)}")
     else:
         logger.info("🔬 MetaOptimizer disabled.")
-    
+
     # Layer 1: Goal-Oriented Behavior (integrates with heavy tick)
     goal_oriented = GoalOrientedBehavior(
         ollama=ollama,
@@ -501,7 +523,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         shell_executor=shell_executor,
     )
     logger.info(f"🎯 GoalOrientedBehavior ready.")
-    
+
     # Layer 0: Fault-Tolerant HeavyTick
     heavy = FaultTolerantHeavyTick(
         cfg=cfg,
@@ -661,8 +683,13 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
 
     values.save_weekly_snapshot()
     self_model.save_weekly_snapshot()
-    await self_model.check_drift(values)
-    
+
+    # FIX: check_drift при shutdown обёрнут в try/except — Ollama может быть недоступна
+    try:
+        await self_model.check_drift(values)
+    except Exception as e:
+        logger.warning(f"check_drift skipped during shutdown: {e}")
+
     # Save new components
     if learning_engine:
         learning_engine.save()
