@@ -1,5 +1,5 @@
 system:
-  version: "Stage 24 - Meta-Cognition Layer"
+  version: "Stage 27 - Multi-Agent Communication"
 
 ticks:
   light_tick_sec: 5
@@ -156,3 +156,36 @@ meta_cognition:
   analyze_every_ticks: 50
   max_insights: 30
   min_confidence: 0.4
+
+# Stage 27: Multi-Agent Communication
+multi_agent:
+  enabled: false  # Disabled by default - enable to join agent network
+  agent_name: "primary"  # Unique name for this agent
+  specialization: "general"  # Agent specialization (research/coding/testing/general)
+  auto_register: true  # Automatically register with network on startup
+  
+  network:
+    host: "localhost"
+    port: 9000  # Unique port per agent
+  
+  shared_storage:
+    registry_path: "memory/multi_agent/shared_registry.json"
+    message_storage: "memory/multi_agent/shared_messages"
+  
+  message_processing:
+    poll_interval_sec: 2  # How often to check for messages
+    batch_size: 10  # Max messages to process per poll
+  
+  delegation:
+    enabled: true  # Allow this agent to delegate tasks
+    auto_delegate_complex: false  # Auto-delegate if task is too complex
+    complexity_threshold: 0.7  # Threshold for auto-delegation
+  
+  consensus:
+    enabled: true  # Participate in consensus voting
+    default_timeout_sec: 30  # Default timeout for consensus requests
+  
+  skill_sharing:
+    enabled: true  # Share skills with other agents
+    auto_share_new: false  # Automatically share newly learned skills
+    min_confidence: 0.7  # Minimum confidence to share skill
