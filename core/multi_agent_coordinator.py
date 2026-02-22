@@ -113,16 +113,29 @@ class MultiAgentCoordinator:
         self._role_manager.assign_role(AgentRole.COORDINATOR)
     
     def _register_self(self):
-        """Register this agent in the network."""
+        """Register this agent in the network. Reuse existing agent_id if agent with same name exists."""
         network_cfg = self._config.get("network", {})
-        self._registry.register(
-            agent_id=self._agent_id,
-            name=self._agent_name,
-            specialization=self._specialization,
-            host=network_cfg.get("host", "localhost"),
-            port=network_cfg.get("port", 9000),
-            capabilities=self._get_capabilities()
-        )
+        
+        # ✅ FIX: Check if agent with same name already exists
+        existing_agent = self._registry.find_by_name(self._agent_name)
+        
+        if existing_agent:
+            # Update existing agent instead of creating new one
+            log.info(f"Agent {self._agent_name} already registered, updating heartbeat")
+            self._agent_id = existing_agent.agent_id  # Use existing ID
+            self._registry.heartbeat(self._agent_id, load=0.0)
+            # Update status to online
+            self._registry.update_status(self._agent_id, "online")
+        else:
+            # Register new agent
+            self._registry.register(
+                agent_id=self._agent_id,
+                name=self._agent_name,
+                specialization=self._specialization,
+                host=network_cfg.get("host", "localhost"),
+                port=network_cfg.get("port", 9000),
+                capabilities=self._get_capabilities()
+            )
     
     def _get_capabilities(self) -> list[str]:
         """Get list of agent capabilities."""
