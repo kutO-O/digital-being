@@ -1,6 +1,6 @@
 """
 Digital Being — IntrospectionAPI
-Stage 26: Added /skills endpoint for SkillLibrary.
+Stage 27: Fixed episode count for multi-agent integration.
 """
 
 from __future__ import annotations
@@ -41,6 +41,17 @@ log = logging.getLogger("digital_being.introspection_api")
 
 _CORS_HEADERS = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type"}
 
+def _count_episodes(mem: "EpisodicMemory") -> int:
+    """Count total episodes using SQL query."""
+    try:
+        if mem._conn:
+            row = mem._conn.execute("SELECT COUNT(*) as cnt FROM episodes").fetchone()
+            return row["cnt"] if row else 0
+        return 0
+    except Exception as e:
+        log.error(f"Failed to count episodes: {e}")
+        return 0
+
 class IntrospectionAPI:
     def __init__(self, host: str, port: int, components: dict, start_time: float) -> None:
         self._host, self._port, self._c, self._start_time = host, port, components, start_time
@@ -72,6 +83,7 @@ class IntrospectionAPI:
         app.router.add_get("/time", self._handle_time)  # Stage 22
         app.router.add_get("/meta-cognition", self._handle_meta_cognition)  # Stage 24
         app.router.add_get("/skills", self._handle_skills)  # Stage 26
+        app.router.add_get("/multi-agent", self._handle_multi_agent)  # Stage 27
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
@@ -94,6 +106,23 @@ class IntrospectionAPI:
             raise
         response.headers.update(_CORS_HEADERS)
         return response
+
+    async def _handle_multi_agent(self, request: web.Request) -> web.Response:
+        """GET /multi-agent - Stage 27"""
+        try:
+            coordinator = self._c.get("multi_agent_coordinator")
+            if not coordinator:
+                return self._json({"error": "MultiAgentCoordinator not available"})
+            
+            stats = coordinator.get_stats()
+            online_agents = coordinator.get_online_agents()
+            
+            return self._json({
+                "stats": stats,
+                "online_agents": [{"agent_id": a.agent_id, "name": a.name, "specialization": a.specialization, "status": a.status, "capabilities": a.capabilities} for a in online_agents],
+            })
+        except Exception as e:
+            return self._error(e)
 
     async def _handle_skills(self, request: web.Request) -> web.Response:
         """GET /skills - Stage 26"""
@@ -198,7 +227,7 @@ class IntrospectionAPI:
             attn = self._c.get("attention_system")
             payload = {"uptime_sec": int(uptime), "tick_count": getattr(self._c.get("heavy_tick"), "_tick_count", 0),
                        "mode": values.get_mode() if values else "unknown", "ollama_available": ollama.is_available() if ollama else False,
-                       "episode_count": mem.count() if mem else 0, "attention_focus": attn.get_focus_summary() if attn else ""}
+                       "episode_count": _count_episodes(mem) if mem else 0, "attention_focus": attn.get_focus_summary() if attn else ""}
             if gp:
                 ag = gp.get_active()
                 payload["current_goal"] = ag.get("goal", "") if ag else "no active goal"
@@ -211,7 +240,7 @@ class IntrospectionAPI:
         try:
             mem = self._c.get("episodic")
             vec = self._c.get("vector_memory")
-            payload = {"episode_count": mem.count() if mem else 0, "vector_count": vec.count() if vec else 0,
+            payload = {"episode_count": _count_episodes(mem) if mem else 0, "vector_count": vec.count() if vec else 0,
                        "recent": mem.get_recent_episodes(10) if mem else []}
             return self._json(payload)
         except Exception as e:
