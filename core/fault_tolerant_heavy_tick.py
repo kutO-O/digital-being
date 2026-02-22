@@ -63,6 +63,7 @@ if TYPE_CHECKING:
     from core.world_model import WorldModel
     from core.meta_cognition import MetaCognition
     from core.skill_library import SkillLibrary  # NEW: Stage 26.5
+    from core.multi_agent_coordinator import MultiAgentCoordinator  # NEW: Stage 27
 
 log = logging.getLogger("digital_being.fault_tolerant_heavy_tick")
 
@@ -156,6 +157,7 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         user_model = None,
         proactive = None,
         meta_optimizer = None,
+        multi_agent_coordinator: Optional["MultiAgentCoordinator"] = None,  # NEW: Stage 27
     ) -> None:
         # Store all components
         self._cfg = cfg
@@ -190,6 +192,7 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         self._user_model = user_model
         self._proactive = proactive
         self._meta_optimizer = meta_optimizer
+        self._multi_agent = multi_agent_coordinator  # NEW: Stage 27
         
         # Initialize Health Monitor
         self._health_monitor = HealthMonitor(check_interval=30)
@@ -224,7 +227,7 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
             "digital_being.decisions", log_dir / "decisions.log"
         )
         
-        log.info("[FaultTolerantHeavyTick] Initialized with resilience features")
+        log.info("[FaultTolerantHeavyTick] Initialized with resilience features + multi-agent support")
     
     async def start(self) -> None:
         """Start Heavy Tick loop with health monitoring."""
