@@ -1,6 +1,7 @@
 """
 Digital Being — Milestones
 Stage 11: Added get_achieved() and get_pending() for IntrospectionAPI.
+API Fix: Added to_dict() method for compatibility.
 """
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ class Milestones:
         self._bus.subscribe("self.principle_added", self._on_principle_added)
         log.debug("Milestones subscribed to self.principle_added.")
 
-    # ─ Core API ────────────────────────────────────────────────────────
+    # ─ Core API ─────────────────────────────────────────────────────────
     def achieve(self, milestone_name: str, description: str) -> bool:
         if milestone_name not in self._data:
             log.debug(f"[achieve] Unknown milestone: '{milestone_name}'")
@@ -81,6 +82,17 @@ class Milestones:
         for name, record in self._data.items():
             result[name] = {"achieved": record is not None, "detail": record}
         return result
+
+    def to_dict(self) -> dict:
+        """Return full milestone data in dict format for API."""
+        achieved = sum(1 for v in self._data.values() if v is not None)
+        return {
+            "achieved": self.get_achieved(),
+            "pending": self.get_pending(),
+            "total": len(_PREDEFINED),
+            "achieved_count": achieved,
+            "progress": achieved / len(_PREDEFINED) if _PREDEFINED else 0.0,
+        }
 
     def get_achieved(self) -> list[dict]:
         """Return list of achieved milestones with detail. Stage 11."""
@@ -106,7 +118,7 @@ class Milestones:
             f"Первый принцип сформирован: '{text[:80]}'",
         )
 
-    # ─ Persistence ──────────────────────────────────────────────────────
+    # ─ Persistence ────────────────────────────────────────────────────────
     def _save(self) -> None:
         if self._path is None:
             return
