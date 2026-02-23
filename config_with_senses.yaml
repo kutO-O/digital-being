@@ -1,0 +1,188 @@
+# Digital Being Configuration with Enhanced Sensory and Action Tools
+# Copy to config.yaml and customize
+
+# ============================================================================
+# CORE SETTINGS (keep your existing settings)
+# ============================================================================
+
+agent:
+  name: "DigitalBeing"
+  model: "llama3.2:3b-instruct-q8_0"
+  max_iterations: 10
+  temperature: 0.7
+
+memory:
+  provider: "lancedb"
+  path: "memory/lancedb"
+  embedding_model: "all-MiniLM-L6-v2"
+
+# ============================================================================
+# NEW: SENSORY TOOLS (INPUT - What agent perceives)
+# ============================================================================
+
+tools:
+  sensory:
+    # DuckDuckGo Web Search
+    duckduckgo:
+      enabled: true
+      default_region: "wt-wt"  # wt-wt=global, ru-ru=Russia, us-en=USA
+      max_results: 5
+      # Agent can now search the real web!
+    
+    # RSS Feed Reader
+    rss:
+      enabled: true
+      feeds:
+        # Monitor your own project
+        - "https://github.com/kutO-O/digital-being/commits/main.atom"
+        # Tech news
+        - "https://news.ycombinator.com/rss"
+        - "https://www.reddit.com/r/MachineLearning/.rss"
+      poll_interval: 3600  # Check every hour
+      # Agent stays informed about the world
+    
+    # System Resource Monitor
+    system_stats:
+      enabled: true
+      poll_interval: 300  # Check every 5 minutes
+      alert_thresholds:
+        cpu_percent: 80
+        memory_percent: 85
+        disk_percent: 90
+      # Agent knows its "body" health
+    
+    # Wikipedia Knowledge Base
+    wikipedia:
+      enabled: true
+      default_language: "en"  # or "ru"
+      default_sentences: 3
+      # Agent can quickly learn about concepts
+  
+  # ========================================================================
+  # NEW: ACTION TOOLS (OUTPUT - What agent does)
+  # ========================================================================
+  
+  action:
+    # Telegram Integration
+    telegram:
+      enabled: false  # SET TO TRUE AFTER SETUP
+      bot_token: ""  # Get from @BotFather
+      chat_id: ""    # Your Telegram chat ID
+      poll_interval: 30
+      # Bridges inbox.txt <-> Telegram messages
+      # Agent can text you when goals complete!
+    
+    # Windows Notifications (Windows only)
+    windows_notify:
+      enabled: true
+      default_duration: 10  # seconds
+      # Agent can show toast notifications
+    
+    # HTTP Requests
+    http_request:
+      enabled: true
+      timeout: 15
+      # Agent can call external APIs
+    
+    # Database Action Logging
+    database:
+      enabled: true
+      path: "data/actions.db"
+      # All actions logged to SQLite
+    
+    # GitHub Integration (requires MCP server)
+    github:
+      enabled: false  # Enable if you want agent to create issues
+      repo: "kutO-O/digital-being"
+
+# ============================================================================
+# AUTONOMOUS BEHAVIOR
+# ============================================================================
+
+autonomous:
+  enabled: true
+  
+  # Now agent can:
+  # - Search web when curious (duckduckgo_search)
+  # - Read RSS to stay informed
+  # - Check system health (system_stats)
+  # - Send you Telegram messages
+  # - Show Windows notifications
+  # - Log all actions to database
+  
+  curiosity:
+    enabled: true
+    # When agent is curious, it will:
+    # 1. Search Wikipedia for quick overview
+    # 2. Search DuckDuckGo for detailed info
+    # 3. Log findings to database
+    # 4. Optionally notify you via Telegram
+  
+  proactive:
+    enabled: true
+    # Agent monitors system stats and:
+    # - Shows notification if CPU/RAM high
+    # - Adjusts behavior to reduce load
+    # - Logs resource usage patterns
+
+# ============================================================================
+# GOAL EXAMPLES WITH NEW TOOLS
+# ============================================================================
+
+goals:
+  - description: "Monitor system health and alert if resources are low"
+    priority: high
+    tools: ["system_stats", "windows_notify", "telegram_send"]
+  
+  - description: "Learn about new AI papers from RSS feeds daily"
+    priority: medium
+    tools: ["rss_read", "wikipedia", "duckduckgo_search"]
+  
+  - description: "Research autonomous agent architectures"
+    priority: high
+    tools: ["duckduckgo_search", "wikipedia", "db_log_action"]
+  
+  - description: "Stay updated on own GitHub repository changes"
+    priority: low
+    tools: ["rss_read", "telegram_send"]
+
+# ============================================================================
+# MULTI-AGENT (for future second agent)
+# ============================================================================
+
+multi_agent:
+  enabled: false
+  # When enabled, you can run a second agent:
+  # Agent 1 (main): Monitors, learns, plans
+  # Agent 2 (worker): Executes web searches, reads RSS
+  
+  coordination:
+    message_broker: "local"
+    shared_memory: true
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+
+logging:
+  level: "INFO"
+  file: "logs/digital_being.log"
+  
+  # New: Log all tool usage
+  tools:
+    enabled: true
+    verbose: true  # Log full request/response
+
+# ============================================================================
+# INTROSPECTION API
+# ============================================================================
+
+api:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8766
+  # Visit http://localhost:8766/docs to see:
+  # - Real-time tool usage
+  # - System stats
+  # - Action log
+  # - RSS feed status
