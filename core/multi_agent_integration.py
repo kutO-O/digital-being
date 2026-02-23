@@ -123,8 +123,7 @@ class MultiAgentSystem:
             ma_dir.mkdir(parents=True, exist_ok=True)
             
             # 1. AgentRegistry
-            registry_path = ma_dir / "registry.json"
-            self.registry = AgentRegistry(registry_path)
+            self.registry = AgentRegistry(heartbeat_timeout=60.0)
             
             # Determine capabilities based on role
             capabilities = self._get_capabilities_for_role(self.role)
@@ -134,16 +133,15 @@ class MultiAgentSystem:
                 agent_id=self.agent_id,
                 name=self.agent_name,
                 role=self.role,
+                status=AgentStatus.ACTIVE,
                 capabilities=capabilities,
-                specializations=["general"],
-                endpoint="local",
                 metadata={
                     "version": "1.0",
                     "initialized_at": time.time(),
                 }
             )
             
-            self.registry.register_agent(agent_info)
+            self.registry.register(agent_info)
             log.info(f"✅ AgentRegistry initialized - {self.agent_name} registered")
             
             # 2. MessageBus
@@ -211,41 +209,44 @@ class MultiAgentSystem:
     
     def _get_capabilities_for_role(self, role: AgentRole) -> list[AgentCapability]:
         """Map role to capabilities."""
+        # Helper to create capability instance
+        def cap(name: str, desc: str, skill: float = 0.8) -> AgentCapability:
+            return AgentCapability(name=name, description=desc, skill_level=skill)
+        
         role_capabilities = {
             AgentRole.COORDINATOR: [
-                AgentCapability.TASK_COORDINATION,
-                AgentCapability.CONSENSUS_VOTING,
-                AgentCapability.MONITORING,
+                cap("task_coordination", "Coordinate tasks across agents", 0.9),
+                cap("consensus_voting", "Facilitate consensus decisions", 0.85),
+                cap("monitoring", "Monitor system health", 0.8),
             ],
             AgentRole.RESEARCHER: [
-                AgentCapability.INFORMATION_GATHERING,
-                AgentCapability.DATA_ANALYSIS,
+                cap("information_gathering", "Gather information from sources", 0.9),
+                cap("data_analysis", "Analyze collected data", 0.8),
             ],
             AgentRole.EXECUTOR: [
-                AgentCapability.CODE_EXECUTION,
-                AgentCapability.FILE_OPERATIONS,
+                cap("code_execution", "Execute code safely", 0.85),
+                cap("file_operations", "Perform file operations", 0.9),
             ],
             AgentRole.ANALYST: [
-                AgentCapability.DATA_ANALYSIS,
-                AgentCapability.PATTERN_RECOGNITION,
+                cap("data_analysis", "Analyze complex data", 0.95),
+                cap("pattern_recognition", "Identify patterns", 0.9),
             ],
-            AgentRole.PLANNER: [
-                AgentCapability.STRATEGIC_PLANNING,
-                AgentCapability.TASK_COORDINATION,
+            AgentRole.GENERALIST: [
+                cap("general_purpose", "Handle various tasks", 0.7),
             ],
-            AgentRole.TESTER: [
-                AgentCapability.TESTING,
-                AgentCapability.VALIDATION,
+            AgentRole.CREATOR: [
+                cap("content_creation", "Create content", 0.85),
+                cap("generation", "Generate outputs", 0.8),
             ],
-            AgentRole.DOCUMENTER: [
-                AgentCapability.DOCUMENTATION,
-            ],
-            AgentRole.SPECIALIST: [
-                AgentCapability.SPECIALIZED_KNOWLEDGE,
+            AgentRole.MONITOR: [
+                cap("monitoring", "Monitor system state", 0.95),
+                cap("health_checks", "Perform health checks", 0.9),
             ],
         }
         
-        return role_capabilities.get(role, [AgentCapability.GENERAL_PURPOSE])
+        return role_capabilities.get(role, [
+            cap("general_purpose", "General task handling", 0.5)
+        ])
     
     async def process_cycle(self) -> Dict[str, Any]:
         """
@@ -293,7 +294,8 @@ class MultiAgentSystem:
             cycle_stats["votes_handled"] = len(active_votes)
             
             # 4. Update agent heartbeat
-            self.registry.update_agent_status(
+            self.registry.heartbeat(self.agent_id)
+            self.registry.update_status(
                 self.agent_id,
                 AgentStatus.BUSY if pending_tasks else AgentStatus.IDLE
             )
@@ -340,7 +342,7 @@ class MultiAgentSystem:
         
         if self._initialized:
             stats.update({
-                "registry": self.registry.get_stats(),
+                "registry": self.registry.get_statistics(),
                 "message_bus": self.message_bus.get_stats(),
                 "task_coordinator": self.task_coordinator.get_stats(),
                 "consensus_voting": self.consensus_voting.get_stats(),
@@ -355,7 +357,7 @@ class MultiAgentSystem:
         log.info("💬 Shutting down MultiAgentSystem...")
         
         if self.registry:
-            self.registry.deregister_agent(self.agent_id)
+            self.registry.unregister(self.agent_id)
             log.info("✅ Agent deregistered")
         
         self._initialized = False
