@@ -13,3 +13,12 @@ websockets>=12.0
 
 # Vector memory embeddings
 sentence-transformers>=2.6.0
+
+# Sensory tools (NEW)
+duckduckgo-search>=5.0.0
+feedparser>=6.0.10
+psutil>=5.9.0
+
+# Action tools (NEW - optional)
+win10toast>=0.9; platform_system=="Windows"
+beautifulsoup4>=4.12.0
