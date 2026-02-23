@@ -166,10 +166,9 @@ class MultiAgentSystem:
             
             log.info(f"✅ MessageBus initialized - subscribed to {len(topics)} topics")
             
-            # 3. TaskCoordinator
+            # 3. TaskCoordinator (only needs agent_registry)
             self.task_coordinator = TaskCoordinator(
-                agent_registry=self.registry,
-                message_bus=self.message_bus
+                agent_registry=self.registry
             )
             
             log.info("✅ TaskCoordinator initialized")
@@ -313,10 +312,7 @@ class MultiAgentSystem:
             # 1. Messages are handled automatically by subscriptions
             
             # 2. Check for assigned tasks
-            pending_tasks = self.task_coordinator.get_agent_tasks(
-                self.agent_id,
-                status=TaskStatus.ASSIGNED
-            )
+            pending_tasks = self.task_coordinator.get_pending_tasks()
             
             cycle_stats["tasks_checked"] = len(pending_tasks)
             
@@ -338,29 +334,6 @@ class MultiAgentSystem:
             self._stats["errors"] += 1
             return {"error": str(e)}
     
-    async def _handle_message(self, msg: Message) -> None:
-        """Handle individual message based on type."""
-        try:
-            if msg.message_type == MessageType.TASK_ASSIGNMENT:
-                log.debug(f"📋 Task assignment: {msg.payload.get('task_id')}")
-                # Task handling logic here
-                
-            elif msg.message_type == MessageType.VOTING_REQUEST:
-                log.debug(f"🗳️ Voting request: {msg.payload.get('proposal_id')}")
-                # Voting logic here
-                
-            elif msg.message_type == MessageType.MEMORY_SYNC:
-                log.debug("🧠 Memory sync request")
-                # Memory sync logic here
-                
-            elif msg.message_type == MessageType.STATUS_UPDATE:
-                log.debug(f"📊 Status update from {msg.sender_id}")
-                # Status handling
-                
-        except Exception as e:
-            log.error(f"Message handling error: {e}")
-            self._stats["errors"] += 1
-    
     def get_stats(self) -> Dict[str, Any]:
         """Get system statistics."""
         stats = {
@@ -375,7 +348,7 @@ class MultiAgentSystem:
             stats.update({
                 "registry": self.registry.get_statistics(),
                 "message_bus": self.message_bus.get_statistics(),
-                "task_coordinator": self.task_coordinator.get_stats(),
+                "task_coordinator": self.task_coordinator.get_statistics(),
                 "consensus_voting": self.consensus_voting.get_stats(),
                 "specialization": self.specialization.get_stats(),
                 "distributed_memory": self.distributed_memory.get_stats(),
