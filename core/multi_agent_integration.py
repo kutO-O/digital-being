@@ -345,7 +345,7 @@ class MultiAgentSystem:
                 "task_coordinator": self.task_coordinator.get_statistics(),
                 "consensus_voting": self.consensus_voting.get_statistics(),
                 "specialization": self.specialization.get_statistics(),
-                "distributed_memory": self.distributed_memory.get_stats(),
+                "distributed_memory": self.distributed_memory.get_statistics(),
             })
         
         return stats
