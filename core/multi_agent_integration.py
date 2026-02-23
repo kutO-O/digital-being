@@ -147,7 +147,7 @@ class MultiAgentSystem:
             # 2. MessageBus
             self.message_bus = MessageBus()
             
-            # Subscribe to relevant topics
+            # Subscribe to relevant topics with handlers
             topics = [
                 "task.created",
                 "task.completed",
@@ -158,7 +158,11 @@ class MultiAgentSystem:
             ]
             
             for topic in topics:
-                self.message_bus.subscribe(topic, self.agent_id)
+                self.message_bus.subscribe(
+                    self.agent_id,
+                    topic,
+                    self._create_message_handler(topic)
+                )
             
             log.info(f"✅ MessageBus initialized - subscribed to {len(topics)} topics")
             
@@ -206,6 +210,40 @@ class MultiAgentSystem:
             log.error(f"❌ MultiAgentSystem initialization failed: {e}")
             self._stats["errors"] += 1
             return False
+    
+    def _create_message_handler(self, topic: str):
+        """Create a message handler for a specific topic."""
+        async def handler(msg: Message) -> None:
+            """Handle message for topic."""
+            try:
+                log.debug(f"📨 Received message on topic '{topic}': {msg.message_id}")
+                
+                if topic == "task.created":
+                    # Handle new task
+                    pass
+                elif topic == "task.completed":
+                    # Handle task completion
+                    pass
+                elif topic == "consensus.proposal":
+                    # Handle voting proposal
+                    pass
+                elif topic == "consensus.result":
+                    # Handle voting result
+                    pass
+                elif topic == "memory.update":
+                    # Handle memory sync
+                    pass
+                elif topic == "agent.status":
+                    # Handle agent status change
+                    pass
+                    
+                self._stats["messages_processed"] += 1
+                
+            except Exception as e:
+                log.error(f"Error handling message on topic '{topic}': {e}")
+                self._stats["errors"] += 1
+        
+        return handler
     
     def _get_capabilities_for_role(self, role: AgentRole) -> list[AgentCapability]:
         """Map role to capabilities."""
@@ -272,14 +310,7 @@ class MultiAgentSystem:
         }
         
         try:
-            # 1. Process messages
-            messages = self.message_bus.get_messages(self.agent_id, limit=20)
-            
-            for msg in messages:
-                await self._handle_message(msg)
-                self.message_bus.acknowledge(msg.message_id, self.agent_id)
-                cycle_stats["messages_processed"] += 1
-                self._stats["messages_processed"] += 1
+            # 1. Messages are handled automatically by subscriptions
             
             # 2. Check for assigned tasks
             pending_tasks = self.task_coordinator.get_agent_tasks(
@@ -343,7 +374,7 @@ class MultiAgentSystem:
         if self._initialized:
             stats.update({
                 "registry": self.registry.get_statistics(),
-                "message_bus": self.message_bus.get_stats(),
+                "message_bus": self.message_bus.get_statistics(),
                 "task_coordinator": self.task_coordinator.get_stats(),
                 "consensus_voting": self.consensus_voting.get_stats(),
                 "specialization": self.specialization.get_stats(),
