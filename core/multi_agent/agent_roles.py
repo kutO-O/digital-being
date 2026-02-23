@@ -22,6 +22,7 @@ class AgentRole(Enum):
     COORDINATOR = "coordinator"
     TESTER = "tester"
     DOCUMENTER = "documenter"
+    SPECIALIST = "specialist"  # Generic specialist role
 
 ROLE_DEFINITIONS = {
     AgentRole.RESEARCHER: {
@@ -72,6 +73,13 @@ ROLE_DEFINITIONS = {
         "capabilities": ["documentation", "writing", "knowledge_capture"],
         "preferred_tasks": ["documentation", "writing", "recording"],
         "expertise_domains": ["documentation", "writing", "knowledge"]
+    },
+    AgentRole.SPECIALIST: {
+        "name": "Специалист",
+        "description": "Специализируется в конкретной области",
+        "capabilities": ["specialized_knowledge", "domain_expertise", "consultation"],
+        "preferred_tasks": ["specialized_work", "consultation", "expertise"],
+        "expertise_domains": ["specialization", "expertise", "consulting"]
     }
 }
 
