@@ -38,11 +38,10 @@ class SafetyValidator:
         "dataclasses", "enum", "pathlib", "logging"
     }
     
-    # Dangerous AST node types
+    # Dangerous AST node types (Python 3 only)
     DANGEROUS_NODES = {
         ast.Import,
         ast.ImportFrom,
-        ast.Exec,  # Python 2
     }
     
     def __init__(self) -> None:
