@@ -173,28 +173,24 @@ class MultiAgentSystem:
             
             log.info("✅ TaskCoordinator initialized")
             
-            # 4. ConsensusVoting (only needs agent_registry)
+            # 4. ConsensusVoting
             self.consensus_voting = ConsensusVoting(
                 agent_registry=self.registry
             )
             
             log.info("✅ ConsensusVoting initialized")
             
-            # 5. AgentSpecialization
-            specialization_path = ma_dir / f"specialization_{self.agent_id}.json"
+            # 5. AgentSpecialization (no agent_id or storage_path)
             self.specialization = AgentSpecialization(
-                agent_id=self.agent_id,
-                storage_path=specialization_path
+                learning_rate=0.05,
+                quality_weight=0.7,
+                speed_weight=0.3
             )
             
             log.info("✅ AgentSpecialization initialized")
             
-            # 6. DistributedMemory
-            memory_path = ma_dir / f"distributed_memory_{self.agent_id}.json"
-            self.distributed_memory = DistributedMemory(
-                agent_id=self.agent_id,
-                storage_path=memory_path
-            )
+            # 6. DistributedMemory (no agent_id or storage_path)
+            self.distributed_memory = DistributedMemory()
             
             log.info("✅ DistributedMemory initialized")
             
@@ -348,7 +344,7 @@ class MultiAgentSystem:
                 "message_bus": self.message_bus.get_statistics(),
                 "task_coordinator": self.task_coordinator.get_statistics(),
                 "consensus_voting": self.consensus_voting.get_statistics(),
-                "specialization": self.specialization.get_stats(),
+                "specialization": self.specialization.get_statistics(),
                 "distributed_memory": self.distributed_memory.get_stats(),
             })
         
