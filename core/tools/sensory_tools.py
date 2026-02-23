@@ -132,6 +132,134 @@ class DuckDuckGoSearchTool(BaseTool):
 
 
 # ============================================================================
+# URL READER
+# ============================================================================
+
+class URLReaderTool(BaseTool):
+    """Fetch and parse web pages using httpx + BeautifulSoup."""
+    
+    @property
+    def name(self) -> str:
+        return "url_reader"
+    
+    @property
+    def description(self) -> str:
+        return "Download and extract text content from web pages"
+    
+    @property
+    def category(self) -> ToolCategory:
+        return ToolCategory.WEB
+    
+    @property
+    def parameters(self) -> List[ToolParameter]:
+        return [
+            ToolParameter(
+                name="url",
+                type="string",
+                description="URL to fetch",
+                required=True,
+            ),
+            ToolParameter(
+                name="max_length",
+                type="int",
+                description="Maximum text length to return",
+                required=False,
+                default=5000,
+            ),
+            ToolParameter(
+                name="extract_links",
+                type="bool",
+                description="Also extract links from page",
+                required=False,
+                default=False,
+            ),
+        ]
+    
+    async def execute(self, **kwargs) -> ToolResult:
+        """Fetch URL content."""
+        url = kwargs["url"]
+        max_length = kwargs.get("max_length", 5000)
+        extract_links = kwargs.get("extract_links", False)
+        
+        try:
+            try:
+                import httpx
+                from bs4 import BeautifulSoup
+            except ImportError:
+                return ToolResult(
+                    success=False,
+                    data=None,
+                    error="Install dependencies: pip install httpx beautifulsoup4",
+                    cost=0,
+                )
+            
+            # Fetch page
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                response = await client.get(url, headers={"User-Agent": "DigitalBeing/1.0"})
+                response.raise_for_status()
+                
+                # Parse HTML
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Remove script and style elements
+                for script in soup(["script", "style", "nav", "footer", "header"]):
+                    script.decompose()
+                
+                # Extract text
+                text = soup.get_text(separator='\n', strip=True)
+                
+                # Clean up whitespace
+                lines = (line.strip() for line in text.splitlines())
+                text = '\n'.join(line for line in lines if line)
+                
+                # Truncate if needed
+                if len(text) > max_length:
+                    text = text[:max_length] + "... [truncated]"
+                
+                result = {
+                    "url": str(response.url),
+                    "status_code": response.status_code,
+                    "title": soup.title.string if soup.title else "No title",
+                    "text": text,
+                    "length": len(text),
+                }
+                
+                # Extract links if requested
+                if extract_links:
+                    links = []
+                    for a in soup.find_all('a', href=True)[:50]:  # Limit to 50 links
+                        links.append({
+                            "text": a.get_text(strip=True)[:100],
+                            "href": a['href'],
+                        })
+                    result["links"] = links
+                
+                return ToolResult(
+                    success=True,
+                    data=result,
+                    metadata={"source": "url_reader", "timestamp": datetime.now().isoformat()},
+                    cost=3,
+                )
+        
+        except httpx.HTTPStatusError as e:
+            log.error(f"HTTP error fetching {url}: {e}")
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"HTTP {e.response.status_code}: {e.response.reason_phrase}",
+                cost=1,
+            )
+        except Exception as e:
+            log.error(f"URL reader failed: {e}")
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"Error: {str(e)}",
+                cost=1,
+            )
+
+
+# ============================================================================
 # RSS FEED READER
 # ============================================================================
 
@@ -475,5 +603,234 @@ class WikipediaTool(BaseTool):
                 success=False,
                 data=None,
                 error=f"Wikipedia error: {str(e)}",
+                cost=1,
+            )
+
+
+# ============================================================================
+# SCREENSHOT + OCR
+# ============================================================================
+
+class ScreenshotOCRTool(BaseTool):
+    """Take screenshot and extract text using OCR."""
+    
+    @property
+    def name(self) -> str:
+        return "screenshot_ocr"
+    
+    @property
+    def description(self) -> str:
+        return "Capture screen and extract text with Tesseract OCR"
+    
+    @property
+    def category(self) -> ToolCategory:
+        return ToolCategory.VISION
+    
+    @property
+    def parameters(self) -> List[ToolParameter]:
+        return [
+            ToolParameter(
+                name="save_path",
+                type="string",
+                description="Optional path to save screenshot",
+                required=False,
+                default="",
+            ),
+            ToolParameter(
+                name="monitor",
+                type="int",
+                description="Monitor number (0=primary, 1=second, etc)",
+                required=False,
+                default=0,
+            ),
+        ]
+    
+    async def execute(self, **kwargs) -> ToolResult:
+        """Take screenshot and OCR."""
+        save_path = kwargs.get("save_path", "")
+        monitor = kwargs.get("monitor", 0)
+        
+        try:
+            try:
+                from PIL import Image, ImageGrab
+                import pytesseract
+            except ImportError:
+                return ToolResult(
+                    success=False,
+                    data=None,
+                    error="Install dependencies: pip install pillow pytesseract\nAlso install Tesseract-OCR system package",
+                    cost=0,
+                )
+            
+            loop = asyncio.get_event_loop()
+            
+            def _capture():
+                # Take screenshot
+                screenshot = ImageGrab.grab()
+                
+                # Save if path provided
+                if save_path:
+                    screenshot.save(save_path)
+                
+                # Extract text with OCR
+                text = pytesseract.image_to_string(screenshot)
+                
+                return {
+                    "text": text.strip(),
+                    "size": screenshot.size,
+                    "saved_to": save_path if save_path else None,
+                    "length": len(text.strip()),
+                }
+            
+            result = await loop.run_in_executor(None, _capture)
+            
+            return ToolResult(
+                success=True,
+                data=result,
+                metadata={"source": "screenshot_ocr", "timestamp": datetime.now().isoformat()},
+                cost=5,
+            )
+        
+        except Exception as e:
+            log.error(f"Screenshot OCR failed: {e}")
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"Error: {str(e)}",
+                cost=1,
+            )
+
+
+# ============================================================================
+# PDF READER
+# ============================================================================
+
+class PDFReaderTool(BaseTool):
+    """Extract text and structure from PDF files."""
+    
+    @property
+    def name(self) -> str:
+        return "pdf_read"
+    
+    @property
+    def description(self) -> str:
+        return "Extract text, metadata, and structure from PDF files"
+    
+    @property
+    def category(self) -> ToolCategory:
+        return ToolCategory.FILE
+    
+    @property
+    def parameters(self) -> List[ToolParameter]:
+        return [
+            ToolParameter(
+                name="file_path",
+                type="string",
+                description="Path to PDF file",
+                required=True,
+            ),
+            ToolParameter(
+                name="max_pages",
+                type="int",
+                description="Maximum pages to process (0=all)",
+                required=False,
+                default=10,
+            ),
+            ToolParameter(
+                name="extract_structure",
+                type="bool",
+                description="Extract document structure (headings, tables)",
+                required=False,
+                default=False,
+            ),
+        ]
+    
+    async def execute(self, **kwargs) -> ToolResult:
+        """Read PDF file."""
+        file_path = Path(kwargs["file_path"])
+        max_pages = kwargs.get("max_pages", 10)
+        extract_structure = kwargs.get("extract_structure", False)
+        
+        try:
+            try:
+                import pdfplumber
+            except ImportError:
+                return ToolResult(
+                    success=False,
+                    data=None,
+                    error="Install pdfplumber: pip install pdfplumber",
+                    cost=0,
+                )
+            
+            if not file_path.exists():
+                return ToolResult(
+                    success=False,
+                    data=None,
+                    error=f"File not found: {file_path}",
+                    cost=0,
+                )
+            
+            loop = asyncio.get_event_loop()
+            
+            def _read_pdf():
+                pages_content = []
+                tables = []
+                
+                with pdfplumber.open(file_path) as pdf:
+                    metadata = pdf.metadata or {}
+                    total_pages = len(pdf.pages)
+                    pages_to_process = min(total_pages, max_pages) if max_pages > 0 else total_pages
+                    
+                    for i, page in enumerate(pdf.pages[:pages_to_process]):
+                        # Extract text
+                        text = page.extract_text() or ""
+                        pages_content.append({
+                            "page": i + 1,
+                            "text": text[:2000],  # Truncate per page
+                        })
+                        
+                        # Extract tables if structure requested
+                        if extract_structure:
+                            page_tables = page.extract_tables()
+                            if page_tables:
+                                for table in page_tables:
+                                    tables.append({
+                                        "page": i + 1,
+                                        "rows": len(table),
+                                        "preview": table[:3] if len(table) > 3 else table,
+                                    })
+                
+                # Combine all text
+                full_text = "\n\n".join(p["text"] for p in pages_content)
+                
+                return {
+                    "metadata": {
+                        "title": metadata.get("Title", "Unknown"),
+                        "author": metadata.get("Author", "Unknown"),
+                        "subject": metadata.get("Subject", ""),
+                        "total_pages": total_pages,
+                        "processed_pages": pages_to_process,
+                    },
+                    "text": full_text[:10000],  # Limit total text
+                    "pages": pages_content,
+                    "tables": tables if extract_structure else None,
+                    "length": len(full_text),
+                }
+            
+            result = await loop.run_in_executor(None, _read_pdf)
+            
+            return ToolResult(
+                success=True,
+                data=result,
+                metadata={"source": "pdf_reader", "file": str(file_path)},
+                cost=4,
+            )
+        
+        except Exception as e:
+            log.error(f"PDF read failed: {e}")
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"Error: {str(e)}",
                 cost=1,
             )
