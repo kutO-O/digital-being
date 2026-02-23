@@ -1,6 +1,7 @@
 """
 Digital Being — Entry Point
 Stage 28-30: FINAL INTEGRATION - Advanced Multi-Agent + Memory + Self-Evolution (COMPLETE)
++ HOT RELOADER: Live Python code reloading without restart! 🔥
 """
 
 from __future__ import annotations
@@ -71,6 +72,9 @@ from core.self_evolution import (
     EvolutionRateLimiter,
     CanaryDeployment,
 )
+
+# 🔥 HOT RELOADER - Live code changes!
+from core.hot_reloader import HotReloader
 
 from core.introspection_api import IntrospectionAPI
 from core.light_tick import LightTick
@@ -325,12 +329,46 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     log_dir = Path(cfg["logging"]["dir"])
     start_time = time.time()
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🔥 HOT RELOADER INITIALIZATION
+    # ═══════════════════════════════════════════════════════════════════════════
+    hot_reload_cfg = cfg.get("hot_reload", {})
+    hot_reload_enabled = bool(hot_reload_cfg.get("enabled", False))
+    hot_reloader = None
+    
+    if hot_reload_enabled:
+        watch_dirs = hot_reload_cfg.get("watch_dirs", ["core"])
+        check_interval = float(hot_reload_cfg.get("check_interval", 2.0))
+        auto_reload = bool(hot_reload_cfg.get("auto_reload", True))
+        blacklist = hot_reload_cfg.get("blacklist", ["main", "config_manager", "hot_reloader"])
+        
+        hot_reloader = HotReloader(
+            watch_dirs=watch_dirs,
+            check_interval=check_interval,
+            auto_reload=auto_reload
+        )
+        
+        # Blacklist critical modules
+        for module_name in blacklist:
+            hot_reloader.blacklist_module(module_name)
+        
+        logger.info("🔥 ═══════════════════════════════════════════════════")
+        logger.info(f"🔥 HOT RELOADER ENABLED")
+        logger.info(f"🔥   Watch dirs    : {watch_dirs}")
+        logger.info(f"🔥   Check interval: {check_interval}s")
+        logger.info(f"🔥   Auto reload   : {auto_reload}")
+        logger.info(f"🔥   Blacklist     : {len(blacklist)} modules")
+        logger.info("🔥 ═══════════════════════════════════════════════════")
+    else:
+        logger.info("🔥 Hot Reloader: disabled")
+    # ═══════════════════════════════════════════════════════════════════════════
+
     mem = EpisodicMemory(Path(cfg["memory"]["episodic_db"]))
     mem.init()
     if not mem.health_check():
         logger.error("EpisodicMemory health check FAILED. Aborting.")
         return
-    mem.add_episode("system.start", "Digital Being started with FULL COGNITIVE ARCHITECTURE", outcome="success")
+    mem.add_episode("system.start", "Digital Being started with FULL COGNITIVE ARCHITECTURE + HOT RELOAD", outcome="success")
 
     principles_stored = mem.get_active_principles()
     if principles_stored:
@@ -819,6 +857,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         "priority_queue": priority_queue,
         "rate_limiter": rate_limiter,
         "canary_deployment": canary_deployment,
+        # 🔥 HOT RELOADER
+        "hot_reloader": hot_reloader,
     }
     api = IntrospectionAPI(
         host=api_cfg.get("host", "127.0.0.1"),
@@ -886,11 +926,14 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"  🚀 Proactive   : {len(proactive._triggers)} triggers")
     if meta_optimizer:
         logger.info(f"  🔬 MetaLearn   : {len(meta_optimizer._ab_tests)} A/B tests")
+    if hot_reloader:
+        hot_stats = hot_reloader.get_stats()
+        logger.info(f"  🔥 HotReload   : enabled, watching {len(hot_reload_cfg.get('watch_dirs', []))} dirs, {hot_stats['successful_reloads']}/{hot_stats['total_reloads']} successful")
     logger.info(f"  API          : {'http://' + api_cfg.get('host','127.0.0.1') + ':' + str(api_cfg.get('port',8765)) if api_enabled else 'disabled'}")
     logger.info(f"  Ollama       : {'ok' if ollama_ok else 'unavailable'}")
     logger.info("=" * 80)
-    logger.info("🧠 FULL COGNITIVE ARCHITECTURE ACTIVE: Stages 1-30 COMPLETE")
-    logger.info("🤝 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution (8 Components)")
+    logger.info("🧠 FULL COGNITIVE ARCHITECTURE ACTIVE: Stages 1-30 COMPLETE + 🔥 HOT RELOAD")
+    logger.info("🤝 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution | 🔥 Live Code Reload")
     logger.info("Running... (Ctrl+C to stop)")
 
     stop_event = asyncio.Event()
@@ -915,6 +958,42 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         name="longterm_memory_loop"
     ) if (longterm_enabled and mem_consolidation) else None
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🔥 MAIN LOOP WITH HOT RELOAD
+    # ═══════════════════════════════════════════════════════════════════════════
+    tick_counter = 0
+    
+    async def _main_loop_with_hot_reload():
+        nonlocal tick_counter
+        while not stop_event.is_set():
+            # 🔥 HOT RELOAD CHECK (every iteration)
+            if hot_reloader:
+                try:
+                    reload_results = hot_reloader.check()
+                    if reload_results:
+                        logger.info(f"🔥 [Tick #{tick_counter}] Hot reload detected: {list(reload_results.keys())}")
+                        for module_name, success in reload_results.items():
+                            status = "✅ SUCCESS" if success else "❌ FAILED"
+                            logger.info(f"🔥    • {module_name}: {status}")
+                        
+                        # Add to memory
+                        mem.add_episode(
+                            "system.hot_reload",
+                            f"Hot reloaded {len(reload_results)} module(s): {', '.join(reload_results.keys())}",
+                            outcome="success" if all(reload_results.values()) else "partial",
+                            data={"modules": list(reload_results.keys()), "tick": tick_counter}
+                        )
+                except Exception as e:
+                    logger.error(f"🔥 Hot reload check failed: {e}")
+            
+            # Regular main loop sleep
+            await asyncio.sleep(1)
+            tick_counter += 1
+    
+    # Start hot reload monitoring loop
+    hot_reload_task = asyncio.create_task(_main_loop_with_hot_reload(), name="hot_reload_loop") if hot_reloader else None
+    # ═══════════════════════════════════════════════════════════════════════════
+
     # Wait for stop signal
     await stop_event.wait()
 
@@ -936,6 +1015,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         tasks_to_cancel.append(multi_agent_task)
     if longterm_memory_task is not None:
         tasks_to_cancel.append(longterm_memory_task)
+    if hot_reload_task is not None:
+        tasks_to_cancel.append(hot_reload_task)
     
     for task in tasks_to_cancel:
         task.cancel()
@@ -962,7 +1043,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         skill_library._save()
         logger.info("✅ SkillLibrary saved")
 
-    mem.add_episode("system.stop", "Digital Being stopped cleanly with FULL ARCHITECTURE", outcome="success")
+    mem.add_episode("system.stop", "Digital Being stopped cleanly with FULL ARCHITECTURE + HOT RELOAD", outcome="success")
     vector_mem.close()
     mem.close()
     logger.info("✅ Graceful shutdown complete. Goodbye! 👋")
@@ -972,11 +1053,11 @@ def main() -> None:
     seed = load_yaml(SEED_PATH)
     logger = setup_logging(cfg)
     logger.info("=" * 72)
-    logger.info("  🧠 Digital Being — FINAL INTEGRATION: Stages 28-30 COMPLETE")
+    logger.info("  🧠 Digital Being — FINAL INTEGRATION: Stages 28-30 COMPLETE + 🔥 HOT RELOAD")
     logger.info(f"  Version        : {cfg['system']['version']}")
     logger.info(f"  Strategy model : {cfg['ollama']['strategy_model']}")
     logger.info(f"  Embed model    : {cfg['ollama']['embed_model']}")
-    logger.info("  🤝 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution")
+    logger.info("  🤝 Advanced Multi-Agent | 🧠 Long-term Memory | 🧬 Self-Evolution | 🔥 Live Code Reload")
     logger.info("=" * 72)
     ensure_directories(cfg)
     if is_first_run(cfg):
