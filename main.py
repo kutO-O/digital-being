@@ -989,9 +989,23 @@ def main() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(asyncio.Event().set()))
+    # ЗАМЕНИТЬ НА:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
+    # Windows не поддерживает add_signal_handler - используем signal.signal()
+    def setup_signals():
+        def sig_handler(signum, frame):
+            logger.info(f"⚠️ Received signal {signal.Signals(signum).name}")
+            # Асинхронный shutdown через stop_event
+            if hasattr(sig_handler, 'stop_event'):
+                sig_handler.stop_event.set()
+        
+        signal.signal(signal.SIGINT, sig_handler)
+        signal.signal(signal.SIGTERM, sig_handler)
+        return sig_handler
+    
+    sig_handler = setup_signals()
     try:
         loop.run_until_complete(async_main(cfg, logger))
     finally:
