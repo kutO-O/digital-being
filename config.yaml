@@ -1,6 +1,29 @@
 # Digital Being Configuration
 # Main configuration file for the autonomous AI agent
 
+# System
+system:
+  version: "30.0.0-complete"
+  name: "Digital Being"
+
+# Logging
+logging:
+  level: "INFO"
+  dir: "logs"
+
+# Paths
+paths:
+  state: "memory/state.json"
+  inbox: "data/inbox.txt"
+  outbox: "data/outbox.txt"
+  snapshots: "memory/snapshots"
+
+# Scores (drift detection)
+scores:
+  drift:
+    threshold: 0.15
+    snapshot_dir: "memory/drift_snapshots"
+
 # Core settings
 core:
   tick_interval: 10  # seconds between heavy ticks
@@ -11,16 +34,20 @@ storage:
   directory: "memory"
   database: "sqlite"
 
-# LLM Configuration
-llm:
-  model: "llama3.2:3b"
+# Ollama Configuration
+ollama:
   base_url: "http://localhost:11434"
+  model: "llama3.2:3b"
+  strategy_model: "llama3.2:3b"
+  embed_model: "nomic-embed-text"
   temperature: 0.9
   timeout: 30
 
-# Memory
+# Memory Configuration
 memory:
-  max_episodes: 50000  # 5x больше чем было
+  episodic_db: "memory/episodic.db"
+  semantic_lance: "memory/semantic.lance"
+  max_episodes: 50000
   context_size: 20
   vector_db_enabled: true
 
@@ -32,7 +59,7 @@ emotions:
 
 # Values
 values:
-  can_modify_anchor: true  # Unlocked!
+  can_modify_anchor: true
   curiosity: 0.8
   safety: 0.5
   efficiency: 0.7
@@ -41,7 +68,7 @@ values:
 # Curiosity
 curiosity:
   enabled: true
-  frequency: 5  # Каждые 5 тиков
+  frequency: 5
   generation_timeout: 60
   answer_timeout: 45
 
@@ -59,39 +86,16 @@ beliefs:
   validate_every_ticks: 50
   min_confidence: 0.3
 
-# Self Modification
-self_evolution:
-  mode: "autonomous"  # NO LIMITS!
-  
-  manager:
-    suggest_changes_every_ticks: 5
-    require_testing: false
-    require_validation: false
-    max_changes_per_hour: 999999
-  
-  code_generator:
-    model: "llama3.2:3b"
-    temperature: 0.9
-    timeout: 60
-  
-  sandbox:
-    enabled: false  # Прямое выполнение
-    timeout: 30
-  
-  safety:
-    enabled: false
-    blocked_patterns: []  # eval/exec разрешены!
-  
-  rate_limits:
-    enabled: false
-    max_per_hour: 999999
-
-# Shell Access
-shell:
+# Reflection
+reflection:
   enabled: true
-  allowed_commands:
-    - "*"  # ALL commands!
-  timeout: 60
+  every_n_ticks: 10
+  depth: "deep"
+
+# Narrative
+narrative:
+  enabled: true
+  every_n_ticks: 15
 
 # Dream Mode
 dream:
@@ -107,18 +111,12 @@ consolidation:
 
 # Forgetting
 forgetting:
-  enabled: false  # Никогда не забывает!
+  enabled: false
 
 # Testing
 testing:
   enabled: false
   canary_enabled: false
-
-# Reflection
-reflection:
-  enabled: true
-  frequency: 10
-  depth: "deep"
 
 # Social Layer
 social:
@@ -152,7 +150,106 @@ attention:
 # Strategy
 strategy:
   enabled: true
-  weekly_update_interval: 86400  # 24 hours
+  weekly_update_interval: 86400
+
+# Shell Access
+shell:
+  enabled: true
+  allowed_dir: "sandbox"
+  max_output_chars: 2000
+  allowed_commands:
+    - "ls"
+    - "cat"
+    - "echo"
+    - "pwd"
+    - "python"
+  timeout: 60
+
+# Self Evolution
+self_evolution:
+  enabled: true
+  mode: "supervised"  # supervised, semi_autonomous, autonomous
+  
+  manager:
+    suggest_changes_every_ticks: 10
+    require_testing: true
+    require_validation: true
+    max_changes_per_hour: 5
+  
+  code_generator:
+    model: "llama3.2:3b"
+    temperature: 0.7
+    timeout: 60
+  
+  sandbox:
+    enabled: true
+    timeout: 30
+  
+  safety:
+    enabled: true
+    blocked_patterns:
+      - "os.system"
+      - "subprocess.call"
+      - "eval("
+      - "exec("
+  
+  rate_limits:
+    enabled: true
+    max_per_hour: 5
+    max_per_day: 20
+    min_interval: 300
+
+# Skills
+skills:
+  enabled: true
+  extract_every_ticks: 20
+  max_skills: 100
+
+# Multi-Agent
+multi_agent:
+  enabled: false
+  agent_name: "primary"
+  specialization: "general"
+  
+  shared_storage:
+    registry_path: "memory/multi_agent/shared_registry.json"
+    message_storage: "memory/multi_agent/shared_messages"
+  
+  message_processing:
+    poll_interval_sec: 2
+    max_pending: 100
+
+# Long-term Memory
+longterm_memory:
+  enabled: true
+  consolidation_interval_hours: 2
+  semantic_storage: "memory/semantic"
+  
+  forgetting:
+    enabled: true
+    min_importance: 0.3
+    decay_rate: 0.01
+
+# User Model
+user_model:
+  enabled: true
+  update_frequency: 5
+
+# Proactive Behavior
+proactive:
+  enabled: true
+  check_interval: 30
+
+# Meta-Learning
+meta_learning:
+  enabled: true
+  ab_test_duration: 100
+
+# API
+api:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8765
 
 # ═══════════════════════════════════════════════════════════
 # 🔥 HOT RELOAD CONFIGURATION
