@@ -1,15 +1,40 @@
-"""Multi-Agent collaboration components."""
+"""Multi-Agent System for Digital Being.
 
-from core.multi_agent.task_delegation import TaskDelegation
-from core.multi_agent.consensus_builder import ConsensusBuilder
-from core.multi_agent.agent_roles import AgentRoleManager, AgentRole
-from core.multi_agent.autoscaler import AgentAutoscaler, ScalingPolicy
+Provides coordination infrastructure for multiple autonomous agents:
+- Agent registration and discovery
+- Task distribution and execution
+- Health monitoring
+- Communication protocols
+
+Phase 3 - Multi-Agent Coordination
+"""
+
+from .agent_registry import (
+    AgentCapability,
+    AgentInfo,
+    AgentRegistry,
+    AgentRole,
+    AgentStatus,
+)
+from .task_coordinator import (
+    Task,
+    TaskCoordinator,
+    TaskPriority,
+    TaskStatus,
+)
 
 __all__ = [
-    "TaskDelegation",
-    "ConsensusBuilder",
-    "AgentRoleManager",
+    # Agent Registry
+    "AgentRegistry",
+    "AgentInfo",
     "AgentRole",
-    "AgentAutoscaler",
-    "ScalingPolicy",
+    "AgentStatus",
+    "AgentCapability",
+    # Task Coordinator
+    "TaskCoordinator",
+    "Task",
+    "TaskPriority",
+    "TaskStatus",
 ]
+
+__version__ = "0.1.0"
