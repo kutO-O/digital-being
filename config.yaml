@@ -23,6 +23,18 @@ scores:
   drift:
     threshold: 0.15
     snapshot_dir: "memory/drift_snapshots"
+  
+  # Thresholds for mode detection
+  thresholds:
+    exploration:
+      curiosity: 0.7
+      growth: 0.6
+    stability:
+      stability: 0.7
+      accuracy: 0.7
+    conservative:
+      stability: 0.8
+      boredom: 0.3
 
 # Core settings
 core:
@@ -163,6 +175,8 @@ shell:
     - "echo"
     - "pwd"
     - "python"
+    - "dir"
+    - "type"
   timeout: 60
 
 # Self Evolution
