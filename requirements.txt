@@ -14,11 +14,17 @@ websockets>=12.0
 # Vector memory embeddings
 sentence-transformers>=2.6.0
 
-# Sensory tools (NEW)
+# Sensory tools
 duckduckgo-search>=5.0.0
 feedparser>=6.0.10
 psutil>=5.9.0
-
-# Action tools (NEW - optional)
-win10toast>=0.9; platform_system=="Windows"
+httpx>=0.27.0
 beautifulsoup4>=4.12.0
+
+# Multimodal tools (optional)
+pillow>=10.0.0
+pytesseract>=0.3.10
+pdfplumber>=0.11.0
+
+# Action tools (optional)
+win10toast>=0.9; platform_system=="Windows"
