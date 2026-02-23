@@ -894,91 +894,16 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info("Running... (Ctrl+C to stop)")
 
     stop_event = asyncio.Event()
-    def _signal_handler():
-        logger.info("⚠️ Shutdown signal received. Initiating graceful shutdown...")
-        
-        try:
-            goal_persistence.mark_interrupted()
-            logger.info("✅ GoalPersistence marked interrupted")
-        except Exception as e:
-            logger.error(f"❌ GoalPersistence mark failed: {e}")
-        
-        try:
-            ticker.stop()
-            logger.info("✅ LightTick stopped")
-        except Exception as e:
-            logger.error(f"❌ LightTick stop failed: {e}")
-        
-        try:
-            heavy.stop()
-            logger.info("✅ HeavyTick stopped")
-        except Exception as e:
-            logger.error(f"❌ HeavyTick stop failed: {e}")
-        
-        try:
-            monitor.stop()
-            logger.info("✅ FileMonitor stopped")
-        except Exception as e:
-            logger.error(f"❌ FileMonitor stop failed: {e}")
-        
-        logger.info("💾 Flushing pending writes...")
-        
-        try:
-            self_model._save()
-            logger.info("✅ SelfModel saved")
-        except Exception as e:
-            logger.error(f"❌ SelfModel save failed: {e}")
-        
-        try:
-            values._persist_state()
-            logger.info("✅ ValueEngine persisted")
-        except Exception as e:
-            logger.error(f"❌ ValueEngine persist failed: {e}")
-        
-        try:
-            milestones._save()
-            logger.info("✅ Milestones saved")
-        except Exception as e:
-            logger.error(f"❌ Milestones save failed: {e}")
-        
-        try:
-            values.save_weekly_snapshot()
-            self_model.save_weekly_snapshot()
-            logger.info("✅ Weekly snapshots saved")
-        except Exception as e:
-            logger.error(f"❌ Snapshots save failed: {e}")
-        
-        if learning_engine:
-            try:
-                learning_engine.save()
-                logger.info("✅ LearningEngine saved")
-            except Exception as e:
-                logger.error(f"❌ LearningEngine save failed: {e}")
-        
-        if user_model:
-            try:
-                user_model.save()
-                logger.info("✅ UserModel saved")
-            except Exception as e:
-                logger.error(f"❌ UserModel save failed: {e}")
-        
-        if meta_optimizer:
-            try:
-                meta_optimizer.save()
-                logger.info("✅ MetaOptimizer saved")
-            except Exception as e:
-                logger.error(f"❌ MetaOptimizer save failed: {e}")
-        
-        if skill_library:
-            try:
-                skill_library._save()
-                logger.info("✅ SkillLibrary saved")
-            except Exception as e:
-                logger.error(f"❌ SkillLibrary save failed: {e}")
-        
-        logger.info("✅ Graceful shutdown complete. Goodbye! 👋")
+    
+    def _signal_handler(signum, frame):
+        """Handle Ctrl+C and other termination signals"""
+        logger.info(f"⚠️ Received signal {signal.Signals(signum).name}")
+        logger.info("⚠️ Initiating graceful shutdown...")
         stop_event.set()
-
+    
+    # Setup signal handlers for Windows
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
 
     light_task = asyncio.create_task(ticker.start(), name="light_tick")
     heavy_task = asyncio.create_task(heavy.start(), name="heavy_tick")
@@ -990,9 +915,10 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         name="longterm_memory_loop"
     ) if (longterm_enabled and mem_consolidation) else None
 
+    # Wait for stop signal
     await stop_event.wait()
 
-    
+    logger.info("📦 Stopping components...")
     goal_persistence.mark_interrupted()
     ticker.stop()
     heavy.stop()
@@ -1000,6 +926,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if api_enabled:
         await api.stop()
 
+    # Cancel all background tasks
     tasks_to_cancel = [light_task, heavy_task]
     if dream_task is not None:
         tasks_to_cancel.append(dream_task)
@@ -1017,23 +944,28 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         except asyncio.CancelledError:
             pass
 
+    logger.info("💾 Saving state...")
     values.save_weekly_snapshot()
     self_model.save_weekly_snapshot()
     await self_model.check_drift(values)
     
     if learning_engine:
         learning_engine.save()
+        logger.info("✅ LearningEngine saved")
     if user_model:
         user_model.save()
+        logger.info("✅ UserModel saved")
     if meta_optimizer:
         meta_optimizer.save()
+        logger.info("✅ MetaOptimizer saved")
     if skill_library:
         skill_library._save()
+        logger.info("✅ SkillLibrary saved")
 
     mem.add_episode("system.stop", "Digital Being stopped cleanly with FULL ARCHITECTURE", outcome="success")
     vector_mem.close()
     mem.close()
-    logger.info("Digital Being shut down cleanly.")
+    logger.info("✅ Graceful shutdown complete. Goodbye! 👋")
 
 def main() -> None:
     cfg = load_yaml(CONFIG_PATH)
@@ -1055,26 +987,10 @@ def main() -> None:
     if anchors.get("locked"):
         logger.info(f"Anchor values LOCKED ({len(anchors.get('values', []))} rules).")
     
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Windows не поддерживает add_signal_handler - используем signal.signal()
-    def setup_signals():
-        def sig_handler(signum, frame):
-            logger.info(f"⚠️ Received signal {signal.Signals(signum).name}")
-            # Асинхронный shutdown через stop_event
-            if hasattr(sig_handler, 'stop_event'):
-                sig_handler.stop_event.set()
-        
-        signal.signal(signal.SIGINT, sig_handler)
-        signal.signal(signal.SIGTERM, sig_handler)
-        return sig_handler
-    
-    sig_handler = setup_signals()
     try:
-        loop.run_until_complete(async_main(cfg, logger))
-    finally:
-        loop.close()
+        asyncio.run(async_main(cfg, logger))
+    except KeyboardInterrupt:
+        logger.info("⚠️ KeyboardInterrupt - exiting cleanly")
 
 if __name__ == "__main__":
     main()
