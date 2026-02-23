@@ -78,14 +78,9 @@ class ResilientOllamaClient:
                 timeout=timeout
             )
 
-        async def _fallback():
-            return fallback
-
         try:
-            result = await self.chat_breaker.call(
-                _call,
-                fallback=_fallback if fallback is not None else None
-            )
+            # Call through circuit breaker without fallback parameter
+            result = await self.chat_breaker.call(_call)
 
             latency_ms = (time.time() - start_time) * 1000
             self.total_latency_ms += latency_ms
@@ -111,6 +106,7 @@ class ResilientOllamaClient:
 
             logger.error(f"[ResilientOllama] Chat failed: {e}")
 
+            # Return fallback if provided
             if fallback is not None:
                 return fallback
             raise
@@ -138,18 +134,15 @@ class ResilientOllamaClient:
                 timeout=timeout
             )
 
-        async def _fallback():
-            return fallback
-
         try:
-            result = await self.embed_breaker.call(
-                _call,
-                fallback=_fallback if fallback is not None else None
-            )
+            # Call through circuit breaker without fallback parameter
+            result = await self.embed_breaker.call(_call)
             return result
 
         except Exception as e:
             logger.error(f"[ResilientOllama] Embed failed: {e}")
+            
+            # Return fallback if provided
             if fallback is not None:
                 return fallback
             raise
