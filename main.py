@@ -543,21 +543,19 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         
         # ========== Stage 28: Advanced Multi-Agent (NEW!) ==========
         # Integrate task delegation, consensus, roles
-        # НОВЫЙ КОД:
         task_delegation = TaskDelegation(
-            message_broker=multi_agent_coordinator._message_broker,
-            storage_dir=storage_dir / "multi_agent",
-            state_path=storage_dir / "multi_agent" / "task_delegation.json"
+            agent_id=agent_id,
+            message_broker=multi_agent_coordinator._broker,
+            storage_dir=storage_dir / "multi_agent"
         )
-
         consensus_builder = ConsensusBuilder(
-            storage_dir=storage_dir / "multi_agent",
-            state_path=storage_dir / "multi_agent" / "consensus.json"
+            agent_id=agent_id,
+            message_broker=multi_agent_coordinator._broker,
+            storage_dir=storage_dir / "multi_agent"
         )
-
         agent_roles = AgentRoleManager(
-            storage_dir=storage_dir / "multi_agent",
-            state_path=storage_dir / "multi_agent" / "agent_roles.json"
+            agent_id=agent_id,
+            storage_dir=storage_dir / "multi_agent"
         )
         
         # Attach to coordinator
@@ -567,7 +565,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         
         # Assign role to this agent
         agent_roles.assign_role(
-            agent_id=agent_id,
             role="coordinator" if "coordinator" in multi_agent_cfg.get("agent_name", "").lower() else "specialist"
         )
         
