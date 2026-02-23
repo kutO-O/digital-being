@@ -43,13 +43,10 @@ from core.meta_learning import MetaOptimizer
 # Stage 26 - Skill Library
 from core.skill_library import SkillLibrary
 
-# Stage 27 - Multi-Agent Communication
-from core.multi_agent_coordinator import MultiAgentCoordinator
+# Stage 27-28 - Multi-Agent System (Phase 3)
+from core.multi_agent_integration import MultiAgentSystem, create_multi_agent_system
+from core.multi_agent import AgentRole
 
-# Stage 28 - Advanced Multi-Agent
-from core.multi_agent.task_delegation import TaskDelegation
-from core.multi_agent.consensus_builder import ConsensusBuilder
-from core.multi_agent.agent_roles import AgentRoleManager
 
 # Stage 29 - Long-term Memory
 from core.memory.memory_consolidation import MemoryConsolidation as LongTermMemoryConsolidation
