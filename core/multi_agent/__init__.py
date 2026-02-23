@@ -1,13 +1,15 @@
 """Multi-Agent System for Digital Being.
 
-Provides coordination infrastructure for multiple autonomous agents:
+Complete infrastructure for coordinating multiple autonomous agents:
 - Agent registration and discovery
-- Task distribution and execution
+- Intelligent task distribution
 - Inter-agent communication
 - Consensus-based decision making
+- Skill learning and specialization
+- Distributed knowledge sharing
 - Health monitoring
 
-Phase 3 - Multi-Agent Coordination
+Phase 3 - Multi-Agent Coordination (COMPLETE!)
 """
 
 from .agent_registry import (
@@ -37,6 +39,17 @@ from .consensus_voting import (
     VotingStrategy,
     VoteStatus,
 )
+from .agent_specialization import (
+    AgentSpecialization,
+    PerformanceProfile,
+    SkillExperience,
+)
+from .distributed_memory import (
+    DistributedMemory,
+    MemoryEntry,
+    MemoryScope,
+    MemoryType,
+)
 
 __all__ = [
     # Agent Registry
@@ -62,6 +75,15 @@ __all__ = [
     "VoteOption",
     "VotingStrategy",
     "VoteStatus",
+    # Agent Specialization
+    "AgentSpecialization",
+    "PerformanceProfile",
+    "SkillExperience",
+    # Distributed Memory
+    "DistributedMemory",
+    "MemoryEntry",
+    "MemoryScope",
+    "MemoryType",
 ]
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"  # Production ready!
