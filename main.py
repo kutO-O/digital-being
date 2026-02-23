@@ -276,7 +276,7 @@ async def _multi_agent_loop(system: MultiAgentSystem, stop_event: asyncio.Event,
     poll_interval = 2.0
     while not stop_event.is_set():
         try:
-            await system.tick()
+            await system.process_cycle()
             await asyncio.sleep(poll_interval)
         except Exception as e:
             logger.error(f"Multi-agent polling error: {e}")
@@ -557,21 +557,20 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         elif "specialist" in role_str:
             agent_role = AgentRole.SPECIALIST
         else:
-            agent_role = AgentRole.WORKER
+            agent_role = AgentRole.EXECUTOR
         
-        multi_agent_system = create_multi_agent_system(
-            agent_id=agent_id,
+        multi_agent_system = await create_multi_agent_system(
             agent_name=multi_agent_cfg.get("agent_name", "primary"),
-            specialization=multi_agent_cfg.get("specialization", "general"),
             role=agent_role,
-            skill_library=skill_library,
-            ollama_client=ollama,
             config=multi_agent_cfg,
             storage_dir=storage_dir,
         )
         
-        ma_stats = multi_agent_system.get_stats()
-        logger.info(f"🤝 MultiAgentSystem ready. agent_id={agent_id[:20]}... total_agents={ma_stats.get('total_agents', 0)}")
+        if multi_agent_system:
+            ma_stats = multi_agent_system.get_stats()
+            logger.info(f"🤝 MultiAgentSystem ready. agent_id={agent_id[:20]}... initialized={ma_stats.get('initialized', False)}")
+        else:
+            logger.error("🤝 MultiAgentSystem initialization failed")
     elif multi_agent_enabled and not skill_library:
         logger.warning("🤝 MultiAgent requires SkillLibrary. Enable skills to use multi-agent features.")
     else:
@@ -850,7 +849,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info(f"  📚 Skills      : {skill_stats['total_skills']} skills, {skill_stats['total_skill_uses']} uses")
     if multi_agent_system:
         ma_stats = multi_agent_system.get_stats()
-        logger.info(f"  🤝 MultiAgent  : {ma_stats.get('total_agents', 0)} agents")
+        logger.info(f"  🤝 MultiAgent  : initialized={ma_stats.get('initialized', False)}")
     if mem_consolidation:
         logger.info(f"  🧠 LT Memory   : {mc_stats['total_memories']} consolidated, {mc_stats['forgotten_count']} forgotten")
         logger.info(f"  📚 Semantic    : {sm_stats['total_concepts']} concepts, {sm_stats['total_facts']} facts")
