@@ -1,0 +1,161 @@
+# ============================================================================
+# AUTONOMOUS EVOLUTION CONFIG - 12+ Hour Run
+# This is a PATCH file - merge these settings into your main config.yaml
+# ============================================================================
+
+# Более частые тики для быстрого обучения
+ticks:
+  light_tick_sec: 8
+  heavy_tick_sec: 90  # 1.5 минуты (вместо 60)
+
+# Агрессивное саморазвитие
+self_evolution:
+  enabled: true
+  mode: "autonomous"  # Полностью автономный режим
+  
+  # Частота проверок на улучшения
+  check_interval_ticks: 5  # Каждые 5 HeavyTicks (~7.5 минут)
+  
+  # Лимиты на изменения
+  max_modifications_per_hour: 8  # Увеличил с 5
+  max_modifications_per_day: 50  # Увеличил с 20
+  min_modification_interval_sec: 180  # 3 минуты (было 5)
+  
+  # Приоритеты для самомодификации
+  priorities:
+    performance_improvement: 1.0    # Высший приоритет
+    memory_optimization: 0.9
+    goal_achievement_boost: 0.8
+    error_reduction: 1.0            # Высший приоритет
+    code_simplification: 0.6
+  
+  # Safety validator - более мягкие ограничения
+  safety:
+    max_lines_changed: 150  # Было 100
+    max_complexity_increase: 25  # Было 20
+    require_tests: false  # Отключаем для быстрого развития
+    require_rollback_plan: true
+  
+  # Performance monitoring
+  performance:
+    track_metrics: true
+    baseline_samples: 5  # Меньше для быстрого старта
+    improvement_threshold: 0.05  # 5% улучшение = успех
+  
+  # Auto-rollback
+  auto_rollback:
+    enabled: true
+    failure_threshold: 3
+    performance_degradation_threshold: 0.15  # 15% деградация = rollback
+
+# Память - агрессивная консолидация
+memory:
+  vector_memory:
+    max_vectors: 2000  # Увеличил с 1000
+    similarity_threshold: 0.75  # Более строгий фильтр
+  
+  episodic_memory:
+    max_episodes: 5000  # Увеличил
+    cleanup_interval_hours: 2  # Чаще cleanup
+  
+  consolidation:
+    enabled: true
+    interval_hours: 2  # Каждые 2 часа (было 6)
+    min_episodes_to_consolidate: 30  # Меньше порог
+    importance_threshold: 0.6  # Более строгий
+    forget_threshold: 0.3  # Забывай менее важное
+  
+  semantic_memory:
+    enabled: true
+    auto_extract_concepts: true
+    concept_formation_threshold: 3  # После 3 упоминаний = концепт
+    max_concepts: 500
+
+# Learning Engine - быстрое обучение
+learning:
+  enabled: true
+  pattern_extraction:
+    min_occurrences: 2  # Быстрее находи паттерны (было 3)
+    confidence_threshold: 0.65  # Менее строгий
+  
+  meta_learning:
+    enabled: true
+    track_strategy_effectiveness: true
+    adapt_parameters: true  # Автоматически подстраивай параметры
+    a_b_test_duration_hours: 1  # Короткие тесты
+
+# Dream Mode - более частые сны
+dream_mode:
+  enabled: true
+  interval_hours: 3  # Каждые 3 часа (было 6)
+  consolidation_min_episodes: 40  # Меньше порог
+  insight_generation: true  # Генерируй инсайты во время сна
+  creative_synthesis: true  # Комбинируй знания креативно
+
+# Beliefs & Contradictions - быстрое формирование убеждений
+beliefs:
+  enabled: true
+  formation_threshold: 2  # Формируй убеждения быстрее (было 3)
+  strength_increase_per_confirmation: 0.2  # Быстрее укрепляй
+  max_active_beliefs: 50  # Больше убеждений
+  
+contradictions:
+  enabled: true
+  detection_sensitivity: 0.7  # Более чувствительный
+  auto_resolve: true  # Автоматически разрешай противоречия
+  resolution_strategies:
+    - "keep_stronger"
+    - "synthesize"
+    - "context_dependent"
+
+# Curiosity - более агрессивное исследование
+curiosity:
+  enabled: true
+  base_rate: 0.4  # Увеличил базовую любознательность (было 0.3)
+  novelty_bonus: 0.3
+  max_open_questions: 15  # Больше открытых вопросов
+  question_generation_interval: 3  # Каждые 3 тика
+
+# Multi-Agent - более частая коллаборация
+multi_agent:
+  enabled: true
+  collaboration_frequency: "high"
+  task_delegation_threshold: 0.6  # Чаще делегируй
+  consensus_required_for: ["critical_modifications"]  # Только для критичных
+  
+  specialist_agents:
+    - name: "researcher"
+      activation_threshold: 0.4  # Активируй чаще
+    - name: "optimizer"
+      activation_threshold: 0.5
+    - name: "tester"
+      activation_threshold: 0.6
+
+# Proactive Behavior - более активный
+proactive:
+  enabled: true
+  initiative_threshold: 0.5  # Легче брать инициативу (было 0.7)
+  triggers:
+    - type: "performance_issue"
+      priority: 1.0
+    - type: "learning_opportunity"
+      priority: 0.8
+    - type: "user_need_prediction"
+      priority: 0.7
+
+# Values - динамическая эволюция ценностей
+values:
+  evolution:
+    allow_value_drift: true
+    max_drift_per_day: 0.15  # Больше дрейфа (было 0.10)
+    curiosity_growth_rate: 0.03  # Быстрее рост любознательности
+  
+  anchor_rules:
+    locked: false  # ВАЖНО: Разреши изменять якорные правила!
+    allow_self_modification: true
+
+# Resource budgets
+resources:
+  budget:
+    max_llm_calls_per_hour: 150  # Увеличил (было 100)
+    tick_timeout_sec: 180  # Увеличил таймаут
