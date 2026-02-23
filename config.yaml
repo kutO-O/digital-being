@@ -24,8 +24,9 @@ scores:
     threshold: 0.15
     snapshot_dir: "memory/drift_snapshots"
   
-  # Thresholds for mode detection
+  # Thresholds for mode detection and warnings
   thresholds:
+    # Mode thresholds
     exploration:
       curiosity: 0.7
       growth: 0.6
@@ -35,6 +36,12 @@ scores:
     conservative:
       stability: 0.8
       boredom: 0.3
+    
+    # Warning thresholds
+    stability_warn: 0.3
+    curiosity_high: 0.85
+    growth_low: 0.2
+    boredom_high: 0.7
 
 # Core settings
 core:
