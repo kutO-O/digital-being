@@ -17,41 +17,31 @@ Write-Host "[+] Applying autonomous evolution config..." -ForegroundColor Yellow
 # Read current config
 $config = Get-Content "$projectDir\config.yaml" -Raw
 
-# Patches
+# Patches - ONLY override specific values, don't replace entire sections
 $evolutionPatch = @"
 
 # ============= AUTONOMOUS 12H EVOLUTION MODE =============
 # Auto-applied by setup_autonomous_12h.ps1
+# This overrides specific values without replacing entire config sections
+
+ticks:
+  heavy_tick_sec: 90
 
 self_evolution:
   check_interval_ticks: 5
   max_modifications_per_hour: 8
   max_modifications_per_day: 50
-  
-memory:
-  consolidation:
-    interval_hours: 2
-    min_episodes_to_consolidate: 30
-    
+
 dream_mode:
   interval_hours: 3
-  insight_generation: true
-  
-learning:
-  pattern_extraction:
-    min_occurrences: 2
-    
+
 curiosity:
   base_rate: 0.4
   max_open_questions: 15
-  
+
 values:
-  evolution:
-    allow_value_drift: true
-    max_drift_per_day: 0.15
   anchor_rules:
     locked: false
-    allow_self_modification: true
 "@
 
 # Apply patch if not already applied
