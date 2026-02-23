@@ -572,9 +572,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         cb_stats = consensus_builder.get_stats()
         ar_stats = agent_roles.get_all_stats()
         
-        logger.info(f"⚙️  TaskDelegation ready. active={td_stats['active_tasks']} completed={td_stats['completed_tasks']}")
-        logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['total_proposals']} approved={cb_stats['approved']}")
-        logger.info(f"🎭 AgentRoles ready. total_roles={ar_stats.get('total_roles', 0)} assignments={ar_stats.get('role_assignments', 0)}")
+        logger.info(f"⚙️  TaskDelegation ready. created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
+        logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['proposals_created']} votes={cb_stats['votes_cast']} decisions={cb_stats['decisions_made']}")
+        logger.info(f"🎭 AgentRoles ready. (stats not yet implemented)")
         
     elif multi_agent_enabled and not skill_library:
         logger.warning("🤝 MultiAgent requires SkillLibrary. Enable skills to use multi-agent features.")
