@@ -166,18 +166,16 @@ class MultiAgentSystem:
             
             log.info(f"✅ MessageBus initialized - subscribed to {len(topics)} topics")
             
-            # 3. TaskCoordinator (only needs agent_registry)
+            # 3. TaskCoordinator
             self.task_coordinator = TaskCoordinator(
                 agent_registry=self.registry
             )
             
             log.info("✅ TaskCoordinator initialized")
             
-            # 4. ConsensusVoting
+            # 4. ConsensusVoting (only needs agent_registry)
             self.consensus_voting = ConsensusVoting(
-                agent_id=self.agent_id,
-                agent_registry=self.registry,
-                message_bus=self.message_bus
+                agent_registry=self.registry
             )
             
             log.info("✅ ConsensusVoting initialized")
@@ -317,7 +315,7 @@ class MultiAgentSystem:
             cycle_stats["tasks_checked"] = len(pending_tasks)
             
             # 3. Check active votes
-            active_votes = self.consensus_voting.get_active_proposals()
+            active_votes = self.consensus_voting.get_pending_proposals()
             cycle_stats["votes_handled"] = len(active_votes)
             
             # 4. Update agent heartbeat
@@ -349,7 +347,7 @@ class MultiAgentSystem:
                 "registry": self.registry.get_statistics(),
                 "message_bus": self.message_bus.get_statistics(),
                 "task_coordinator": self.task_coordinator.get_statistics(),
-                "consensus_voting": self.consensus_voting.get_stats(),
+                "consensus_voting": self.consensus_voting.get_statistics(),
                 "specialization": self.specialization.get_stats(),
                 "distributed_memory": self.distributed_memory.get_stats(),
             })
