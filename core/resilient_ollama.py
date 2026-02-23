@@ -31,14 +31,15 @@ class ResilientOllamaClient:
         self.chat_breaker = CircuitBreaker(
             name="ollama_chat",
             failure_threshold=3,
-            timeout_duration=60,
+            recovery_timeout=60.0,  # ✅ ПРАВИЛЬНО!
+            success_threshold=2
         )
         self.embed_breaker = CircuitBreaker(
             name="ollama_embed",
             failure_threshold=3,
-            timeout_duration=60,
+            recovery_timeout=60.0,  # ✅ ПРАВИЛЬНО!
+            success_threshold=2
         )
-
         # Register with health monitor
         if self.health_monitor:
             self.health_monitor.register_component("ollama")
