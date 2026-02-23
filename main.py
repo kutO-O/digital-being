@@ -546,16 +546,16 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         task_delegation = TaskDelegation(
             agent_id=agent_id,
             message_broker=multi_agent_coordinator._broker,
-            storage_dir=storage_dir / "multi_agent"
+            state_path=storage_dir / "multi_agent" / f"task_delegation_{agent_id}.json"
         )
         consensus_builder = ConsensusBuilder(
             agent_id=agent_id,
             message_broker=multi_agent_coordinator._broker,
-            storage_dir=storage_dir / "multi_agent"
+            state_path=storage_dir / "multi_agent" / f"consensus_{agent_id}.json"
         )
         agent_roles = AgentRoleManager(
             agent_id=agent_id,
-            storage_dir=storage_dir / "multi_agent"
+            state_path=storage_dir / "multi_agent" / f"agent_roles_{agent_id}.json"
         )
         
         # Attach to coordinator
