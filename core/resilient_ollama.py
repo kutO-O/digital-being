@@ -31,13 +31,13 @@ class ResilientOllamaClient:
         self.chat_breaker = CircuitBreaker(
             name="ollama_chat",
             failure_threshold=3,
-            recovery_timeout=60.0,  # ✅ ПРАВИЛЬНО!
+            recovery_timeout=60.0,
             success_threshold=2
         )
         self.embed_breaker = CircuitBreaker(
             name="ollama_embed",
             failure_threshold=3,
-            recovery_timeout=60.0,  # ✅ ПРАВИЛЬНО!
+            recovery_timeout=60.0,
             success_threshold=2
         )
         # Register with health monitor
@@ -158,7 +158,6 @@ class ResilientOllamaClient:
         """
         Internal wrapper for ollama.chat() to make it async-compatible.
         """
-        # FIX: get_running_loop() instead of deprecated get_event_loop()
         loop = asyncio.get_running_loop()
 
         # Run synchronous ollama.chat in thread pool
@@ -172,7 +171,6 @@ class ResilientOllamaClient:
         """
         Internal wrapper for ollama.embed() to make it async-compatible.
         """
-        # FIX: get_running_loop() instead of deprecated get_event_loop()
         loop = asyncio.get_running_loop()
 
         # Run synchronous ollama.embed in thread pool
@@ -191,7 +189,7 @@ class ResilientOllamaClient:
         """
         from core.circuit_breaker import CircuitState
         return (
-            self.chat_breaker.state != CircuitState.OPEN and
+            self.chat_breaker.get_state() != CircuitState.OPEN and
             self.ollama.is_available()
         )
 
