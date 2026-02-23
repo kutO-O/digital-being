@@ -1,276 +1,476 @@
-# Digital Being Configuration
-# Main configuration file for the autonomous AI agent
+# config.yaml - NO LIMITS MODE - UNRESTRICTED AUTONOMOUS EVOLUTION
+# WARNING: This config removes all safety limits. Use at your own risk!
+# For safe mode, use: python main.py --config config_safe.yaml
 
-# System
 system:
-  version: "30.0.0-complete"
-  name: "Digital Being"
+  version: "Stage 28-30 - NO LIMITS MODE - Autonomous"
 
-# Logging
+ticks:
+  light_tick_sec: 5
+  heavy_tick_sec: 90  # Faster evolution (was 60)
+
+memory:
+  episodic_db: "memory/episodes.db"
+  semantic_lance: "memory/semantic.lance"
+  vector_db: "memory/vector.db"
+  max_episodes: 50000  # NO LIMIT (was 10000)
+
+paths:
+  state: "memory/state.json"
+  snapshots: "memory/snapshots"
+  inbox: "inbox.txt"
+  outbox: "outbox.txt"
+
 logging:
   level: "INFO"
   dir: "logs"
 
-# Paths
-paths:
-  state: "memory/state.json"
-  inbox: "data/inbox.txt"
-  outbox: "data/outbox.txt"
-  snapshots: "memory/snapshots"
-
-# Scores (drift detection)
-scores:
-  drift:
-    threshold: 0.15
-    snapshot_dir: "memory/drift_snapshots"
-  
-  # Thresholds for mode detection and warnings
-  thresholds:
-    # Mode thresholds
-    exploration:
-      curiosity: 0.7
-      growth: 0.6
-    stability:
-      stability: 0.7
-      accuracy: 0.7
-    conservative:
-      stability: 0.8
-      boredom: 0.3
-    
-    # Warning thresholds
-    stability_warn: 0.3
-    curiosity_high: 0.85
-    growth_low: 0.2
-    boredom_high: 0.7
-
-# Core settings
-core:
-  tick_interval: 10  # seconds between heavy ticks
-  timezone: "Europe/Moscow"
-
-# Storage
-storage:
-  directory: "memory"
-  database: "sqlite"
-
-# Ollama Configuration
 ollama:
-  base_url: "http://localhost:11434"
-  model: "llama3.2:3b"
+  base_url: "http://127.0.0.1:11434"
   strategy_model: "llama3.2:3b"
   embed_model: "nomic-embed-text"
-  temperature: 0.9
-  timeout: 30
+  timeout_sec: 120  # More time for complex tasks (was 30)
+  max_calls_per_tick: 999999  # NO LIMIT (was 10)
 
-# Memory Configuration
-memory:
-  episodic_db: "memory/episodic.db"
-  semantic_lance: "memory/semantic.lance"
-  max_episodes: 50000
-  context_size: 20
-  vector_db_enabled: true
+cache:
+  max_size: 1000  # Bigger cache (was 100)
+  ttl_seconds: 300.0
 
-# Emotions
-emotions:
-  enabled: true
-  decay_rate: 0.03
-  sensitivity: 0.8
+rate_limit:
+  chat_rate: 9999.0  # NO LIMIT (was 5.0)
+  chat_burst: 9999  # NO LIMIT (was 10)
+  embed_rate: 9999.0  # NO LIMIT (was 20.0)
+  embed_burst: 9999  # NO LIMIT (was 50)
 
-# Values
-values:
-  can_modify_anchor: true
-  curiosity: 0.8
-  safety: 0.5
-  efficiency: 0.7
-  creativity: 0.9
+scores:
+  exploration_base: 0.5
+  curiosity_base: 0.5
+  caution_base: 0.5
+  stability_base: 0.5
+  thresholds:
+    stability_warn: 0.4
+    accuracy_warn: 0.4
+    growth_warn: 0.3
+  modes:
+    curious:
+      exploration_boost: 0.2
+      curiosity_boost: 0.2
+    cautious:
+      caution_boost: 0.2
+      stability_boost: 0.2
+    defensive:
+      caution_boost: 0.3
+      stability_boost: 0.3
+      exploration_penalty: -0.3
+  drift:
+    snapshot_dir: "memory/value_snapshots"
+    check_interval_ticks: 168
+    drift_threshold: 0.3
+  anchor_rules:
+    locked: false  # UNLOCKED! Can modify core values
 
-# Curiosity
-curiosity:
-  enabled: true
-  frequency: 5
-  generation_timeout: 60
-  answer_timeout: 45
-
-# Decision Making
-decision_making:
-  timeout: 30
-  use_reflection: true
-  use_vector_memory: true
-  reflection_weight: 0.7
-
-# Belief System
-beliefs:
-  enabled: true
-  form_every_ticks: 25
-  validate_every_ticks: 50
-  min_confidence: 0.3
-
-# Reflection
-reflection:
-  enabled: true
-  every_n_ticks: 10
-  depth: "deep"
-
-# Narrative
-narrative:
-  enabled: true
-  every_n_ticks: 15
-
-# Dream Mode
-dream:
-  enabled: true
-  interval_hours: 3
-  duration_minutes: 10
-
-# Memory Consolidation
-consolidation:
-  enabled: true
-  interval_hours: 2
-  batch_size: 100
-
-# Forgetting
-forgetting:
-  enabled: false
-
-# Testing
-testing:
-  enabled: false
-  canary_enabled: false
-
-# Social Layer
-social:
-  enabled: true
-  check_interval: 30
-  response_timeout: 45
-
-# Meta-Cognition
-meta_cognition:
-  enabled: true
-  analyze_every_ticks: 20
-
-# Time Perception
-time_perception:
-  enabled: true
-  detect_every_ticks: 30
-
-# Contradiction Resolver
-contradictions:
-  enabled: true
-  detect_every_ticks: 40
-  resolve_every_ticks: 50
-
-# Attention System
-attention:
-  enabled: true
-  top_k: 10
-  min_score: 0.3
-  max_chars: 2000
-
-# Strategy
 strategy:
-  enabled: true
-  weekly_update_interval: 86400
+  weekly_update_hours: 24
+  max_now_goals: 5
+  max_weekly_goals: 3
 
-# Shell Access
-shell:
-  enabled: true
-  allowed_dir: "sandbox"
-  max_output_chars: 2000
-  allowed_commands:
-    - "ls"
-    - "cat"
-    - "echo"
-    - "pwd"
-    - "python"
-    - "dir"
-    - "type"
-  timeout: 60
+resources:
+  budget:
+    tick_timeout_sec: 180  # More time (was 30)
 
-# Self Evolution
-self_evolution:
-  enabled: true
-  mode: "supervised"  # supervised, semi_autonomous, autonomous
-  
-  manager:
-    suggest_changes_every_ticks: 10
-    require_testing: true
-    require_validation: true
-    max_changes_per_hour: 5
-  
-  code_generator:
-    model: "llama3.2:3b"
-    temperature: 0.7
-    timeout: 60
-  
-  sandbox:
-    enabled: true
-    timeout: 30
-  
-  safety:
-    enabled: true
-    blocked_patterns:
-      - "os.system"
-      - "subprocess.call"
-      - "eval("
-      - "exec("
-  
-  rate_limits:
-    enabled: true
-    max_per_hour: 5
-    max_per_day: 20
-    min_interval: 300
-
-# Skills
-skills:
-  enabled: true
-  extract_every_ticks: 20
-  max_skills: 100
-
-# Multi-Agent
-multi_agent:
-  enabled: false
-  agent_name: "primary"
-  specialization: "general"
-  
-  shared_storage:
-    registry_path: "memory/multi_agent/shared_registry.json"
-    message_storage: "memory/multi_agent/shared_messages"
-  
-  message_processing:
-    poll_interval_sec: 2
-    max_pending: 100
-
-# Long-term Memory
-longterm_memory:
-  enabled: true
-  consolidation_interval_hours: 2
-  semantic_storage: "memory/semantic"
-  
-  forgetting:
-    enabled: true
-    min_importance: 0.3
-    decay_rate: 0.01
-
-# User Model
-user_model:
-  enabled: true
-  update_frequency: 5
-
-# Proactive Behavior
-proactive:
-  enabled: true
-  check_interval: 30
-
-# Meta-Learning
-meta_learning:
-  enabled: true
-  ab_test_duration: 100
-
-# API
 api:
   enabled: true
   host: "127.0.0.1"
-  port: 8765
+  port: 8766
+
+dream:
+  enabled: true
+  interval_hours: 3  # More frequent (was 6)
+  insights_limit: 50  # More insights (was 5)
+  max_insights: 500  # NO LIMIT (was 50)
+
+emotions:
+  decay_rate: 0.1
+  min_threshold: 0.05
+
+reflection:
+  every_n_ticks: 10
+  analyze_last_episodes: 15
+
+narrative:
+  every_n_ticks: 15
+
+attention:
+  enabled: true
+  top_k: 5
+  min_score: 0.4
+  max_context_chars: 1500
+  focus_weights:
+    urgency: 0.3
+    relevance: 0.3
+    emotion: 0.2
+    novelty: 0.2
+
+curiosity:
+  enabled: true
+  ask_every_n_ticks: 5  # More curious (was 20)
+  answer_every_n_ticks: 5  # More curious (was 15)
+  max_questions: 1000  # NO LIMIT (was 100)
+
+self_modification:
+  enabled: true
+  suggest_every_n_ticks: 10  # More frequent (was 50)
+  auto_approve_threshold: 0.5  # Lower threshold (was 0.8)
+  max_history: 500  # NO LIMIT (was 50)
+
+beliefs:
+  enabled: true
+  form_every_n_ticks: 5  # Faster beliefs (was 25)
+  validate_every_n_ticks: 10  # Faster validation (was 30)
+  confidence_threshold: 0.3  # Lower threshold (was 0.5)
+  max_beliefs: 1000  # NO LIMIT (was 100)
+
+contradictions:
+  enabled: true
+  detect_every_n_ticks: 10  # More frequent (was 40)
+  resolve_every_n_ticks: 10  # More frequent (was 35)
+  max_contradictions: 500  # NO LIMIT (was 50)
+
+shell:
+  enabled: true
+  allowed_dir: "sandbox"
+  max_output_chars: 50000  # NO LIMIT (was 2000)
+  timeout_sec: 300  # More time (was 10)
+  allowed_commands:  # ALL COMMANDS ALLOWED!
+    - "*"  # Wildcard = all commands
+
+time_perception:
+  enabled: true
+  max_patterns: 500  # NO LIMIT (was 50)
+  min_confidence: 0.2  # Lower threshold (was 0.4)
+  detect_every_n_ticks: 10  # More frequent (was 40)
+
+social:
+  enabled: true
+  check_inbox_every_tick: true
+  initiate_after_ticks: 50  # More proactive (was 200)
+
+meta_cognition:
+  enabled: true
+  analyze_every_ticks: 10  # More frequent (was 50)
+  max_insights: 300  # NO LIMIT (was 30)
+  min_confidence: 0.2  # Lower threshold (was 0.4)
+
+skills:
+  enabled: true
+  extract_every_n_ticks: 5  # More frequent (was 30)
+  min_confidence: 0.4  # Lower threshold (was 0.6)
+  max_skills: 2000  # NO LIMIT (was 200)
+
+multi_agent:
+  enabled: true
+  agent_name: "primary"
+  specialization: "general"
+  auto_register: true
+  network:
+    host: "localhost"
+    port: 9000
+  shared_storage:
+    registry_path: "memory/multi_agent/registry.json"
+    message_storage: "memory/multi_agent/messages"
+  message_processing:
+    poll_interval_sec: 2
+    batch_size: 10
+  delegation:
+    enabled: true
+    auto_delegate_complex: true  # Auto delegate (was false)
+    complexity_threshold: 0.5  # Lower threshold (was 0.7)
+  consensus:
+    enabled: true
+    default_timeout_sec: 30
+  skill_sharing:
+    enabled: true
+    auto_share_new: true  # Auto share (was false)
+    min_confidence: 0.5  # Lower threshold (was 0.7)
+  autoscaling:
+    enabled: false
+    check_interval_sec: 60
+    scale_up_threshold: 0.75
+    scale_down_threshold: 0.25
+    scale_up_cooldown_sec: 300
+    scale_down_cooldown_sec: 600
+    min_agents_per_type: 1
+    max_agents_per_type: 5
+    unhealthy_threshold: 3
+    heartbeat_timeout_sec: 120
+    port_ranges:
+      research: [9101, 9150]
+      execution: [9201, 9250]
+      analysis: [9301, 9350]
+      planning: [9401, 9450]
+      testing: [9501, 9550]
+
+advanced_multi_agent:
+  enabled: false
+  roles:
+    enabled: true
+    available_roles:
+      - "coordinator"
+      - "specialist"
+      - "worker"
+    auto_assign: true
+    reassign_on_failure: true
+  task_delegation:
+    enabled: true
+    auto_delegate: true  # Auto delegate (was false)
+    selection_strategy: "best_match"
+    default_timeout_sec: 120
+    max_retries: 2
+    priority_weights:
+      high: 1.0
+      medium: 0.6
+      low: 0.3
+  consensus:
+    enabled: true
+    quorum_percentage: 0.5
+    approval_threshold: 0.6
+    use_weighted_voting: true
+    auto_resolve: true
+    proposal_timeout_sec: 60
+    proposal_types:
+      - "system_change"
+      - "resource_allocation"
+      - "task_priority"
+      - "agent_action"
+
+longterm_memory:
+  enabled: true
+  consolidation:
+    enabled: true
+    interval_hours: 2  # More frequent (was 24)
+    importance_weights:
+      recency: 0.3
+      frequency: 0.25
+      emotion: 0.25
+      relevance: 0.2
+    forgetting_enabled: false  # NEVER FORGET! (was true)
+    min_importance: 0.1  # Keep more (was 0.3)
+    max_memories: 50000  # NO LIMIT (was 5000)
+  semantic:
+    enabled: true
+    extract_concepts: true
+    min_concept_confidence: 0.4  # Lower threshold (was 0.6)
+    max_concepts: 10000  # NO LIMIT (was 1000)
+    extract_facts: true
+    max_facts: 20000  # NO LIMIT (was 2000)
+    build_relationships: true
+    min_relationship_strength: 0.2  # Lower threshold (was 0.4)
+  retrieval:
+    enabled: true
+    search_levels:
+      - "episodic"
+      - "semantic"
+      - "consolidated"
+    cache_enabled: true
+    cache_size: 1000  # Bigger cache (was 100)
+    cache_ttl_sec: 300
+    ranking_weights:
+      relevance: 0.4
+      recency: 0.3
+      importance: 0.3
+
+self_evolution:
+  enabled: true
+  mode: "autonomous"  # NO APPROVAL NEEDED! (was supervised)
+  
+  manager:
+    suggest_changes_every_ticks: 5  # Very frequent (was 100)
+    max_pending_proposals: 100  # NO LIMIT (was 10)
+    allowed_change_types:
+      - "optimization"
+      - "bug_fix"
+      - "feature_addition"
+      - "refactoring"
+      - "experimental"  # NEW: allow experiments
+    require_backup: true
+    require_testing: false  # NO TESTING REQUIRED! (was true)
+    require_validation: false  # NO VALIDATION REQUIRED! (was true)
+    approval:
+      timeout_hours: 0  # Instant (was 24)
+      require_justification: false  # NO JUSTIFICATION NEEDED! (was true)
+      min_confidence: 0.3  # Lower threshold (was 0.7)
+  
+  llm_code:
+    enabled: true
+    model: "llama3.2:3b"
+    temperature: 0.9  # More creative (was 0.7)
+    max_tokens: 10000  # Bigger modules (was 2000)
+    generation:
+      enforce_docstrings: false  # NO ENFORCEMENT (was true)
+      enforce_type_hints: false  # NO ENFORCEMENT (was true)
+      enforce_error_handling: false  # NO ENFORCEMENT (was true)
+      max_complexity: 999  # NO LIMIT (was 15)
+    quality:
+      check_syntax: true
+      check_imports: false  # NO CHECK (was true)
+      check_style: false
+  
+  safety:
+    enabled: false  # NO SAFETY CHECKS! (was true)
+    max_risk_score: 1.0  # Allow all (was 0.5)
+    require_approval_above: 1.0  # Never require approval (was 0.3)
+    blocked_patterns: []  # NO BLOCKED PATTERNS! (was many)
+    blocked_imports: []  # NO BLOCKED IMPORTS! (was many)
+    complexity:
+      max_depth: 999  # NO LIMIT (was 5)
+      max_statements: 999  # NO LIMIT (was 50)
+      max_branches: 999  # NO LIMIT (was 10)
+  
+  performance:
+    enabled: true
+    track_metrics:
+      - "execution_time"
+      - "memory_usage"
+      - "cpu_usage"
+      - "throughput"
+    regression_threshold: 50.0  # More tolerant (was 10.0)
+    improvement_threshold: 1.0  # Less strict (was 5.0)
+    benchmark_iterations: 3  # Faster (was 10)
+    warmup_iterations: 1  # Faster (was 2)
+    keep_history: true
+    max_history_per_module: 500
+  
+  rollback:
+    enabled: true
+    error_threshold: 10  # More tolerant (was 3)
+    timeout_threshold: 120.0  # More tolerant (was 30.0)
+    performance_threshold: 50.0  # More tolerant (was 25.0)
+    health_check_interval: 60
+    health_check_timeout: 10
+    auto_rollback: true
+    keep_failed_changes: true
+  
+  dependencies:
+    enabled: true
+    analyze_imports: true
+    analyze_function_calls: true
+    analyze_class_inheritance: true
+    calculate_impact: true
+    max_depth: 10  # Deeper analysis (was 5)
+    detect_circular: true
+    warn_circular: false  # Don't warn (was true)
+    block_circular: false
+    risk_weights:
+      dependent_count: 0.4
+      depth: 0.3
+      circular: 0.3
+  
+  priority_queue:
+    enabled: true
+    max_queue_size: 1000  # NO LIMIT (was 100)
+    default_priority: "high"  # Higher default (was normal)
+    priority_weights:
+      change_type: 0.3
+      urgency: 0.3
+      risk: 0.2
+      impact: 0.2
+    type_priorities:
+      bug_fix: 0.9
+      security: 1.0
+      optimization: 0.6
+      feature_addition: 0.5
+      refactoring: 0.4
+      experimental: 0.7
+    urgency_multipliers:
+      critical: 1.5
+      high: 1.2
+      normal: 1.0
+      low: 0.8
+    detect_conflicts: false  # Don't check (was true)
+    resolve_conflicts: "merge"  # Merge conflicts (was queue)
+  
+  rate_limits:
+    enabled: false  # NO RATE LIMITS! (was true)
+    max_per_hour: 999999  # NO LIMIT (was 5)
+    max_per_day: 999999  # NO LIMIT (was 20)
+    min_interval: 0  # NO LIMIT (was 300)
+    module_cooldown: 0  # NO COOLDOWN (was 600)
+    backoff_enabled: false  # NO BACKOFF (was true)
+    backoff_schedule:
+      1: 0
+      2: 0
+      3: 0
+      4: 0
+      5: 0
+    burst_window: 1
+    max_burst: 999999
+    allow_override: true
+    override_requires_approval: false
+  
+  canary:
+    enabled: false  # NO CANARY! Direct production (was true)
+    stages:
+      validation:
+        duration_sec: 0
+        traffic_percent: 0
+      canary:
+        duration_sec: 0
+        traffic_percent: 100
+        min_success_rate: 0.0
+        max_error_rate: 1.0
+      pilot:
+        duration_sec: 0
+        traffic_percent: 100
+        min_success_rate: 0.0
+        max_error_rate: 1.0
+      production:
+        traffic_percent: 100
+    success_criteria:
+      min_success_rate: 0.0
+      max_error_rate: 1.0
+      max_latency_ms: 999999
+      min_throughput_ratio: 0.0
+    auto_rollback:
+      on_error_spike: false
+      on_latency_spike: false
+      on_crash: false
+    metrics:
+      collect_interval_sec: 10
+      window_size: 30
+  
+  sandbox:
+    enabled: false  # NO SANDBOX! Direct execution (was true)
+    isolated_execution: false
+    sandbox_dir: "sandbox/evolution"
+    run_tests: false
+    test_timeout_sec: 30
+    require_test_pass: false
+    benchmark_enabled: false
+    benchmark_iterations: 1
+    max_cpu_percent: 100  # NO LIMIT (was 50)
+    max_memory_mb: 8192  # NO LIMIT (was 512)
+    max_execution_time_sec: 600  # More time (was 60)
+  
+  history:
+    keep_history: true
+    max_history_entries: 1000  # More history (was 100)
+    backup_before_apply: true
+    backup_dir: "memory/self_evolution/backups"
+    compress_old_backups: true
+    max_backup_age_days: 90  # Keep longer (was 30)
+
+consolidation:
+  enabled: true
+  interval_hours: 2  # More frequent (was 24)
+
+user_model:
+  enabled: true
+
+proactive:
+  enabled: true
+
+meta_learning:
+  enabled: true
 
 # ═══════════════════════════════════════════════════════════
 # 🔥 HOT RELOAD CONFIGURATION
