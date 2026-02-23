@@ -809,8 +809,8 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if multi_agent_coordinator:
         logger.info(f"  🤝 MultiAgent  : {ma_stats['registry']['online_agents']} agents online")
         if hasattr(multi_agent_coordinator, '_task_delegation'):
-            logger.info(f"  ⚙️  Tasks       : active={td_stats['active_tasks']} completed={td_stats['completed_tasks']}")
-            logger.info(f"  🗳️  Consensus   : proposals={cb_stats['total_proposals']} approved={cb_stats['approved']}")
+            logger.info(f"  ⚙️  Tasks       : created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
+            logger.info(f"  🗳️  Consensus   : proposals={cb_stats['proposals_created']} votes={cb_stats['votes_cast']} decisions={cb_stats['decisions_made']}")
             logger.info(f"  🎭 Roles       : {ar_stats.get('total_roles', 0)} defined, {ar_stats.get('role_assignments', 0)} assigned")
     if mem_consolidation:
         logger.info(f"  🧠 LT Memory   : {mc_stats['total_memories']} consolidated, {mc_stats['forgotten_count']} forgotten")
