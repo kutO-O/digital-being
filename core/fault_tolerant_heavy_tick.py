@@ -226,21 +226,20 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
             "digital_being.decisions", log_dir / "decisions.log"
         )
         
-        # И добавить метод:
-        def _create_file_logger(self, name: str, path: Path) -> logging.Logger:
-            """Create a dedicated file logger."""
-            logger = logging.getLogger(name)
-            logger.setLevel(logging.INFO)
-            logger.propagate = False
-            
-            handler = logging.FileHandler(path, encoding="utf-8")
-            handler.setLevel(logging.INFO)
-            handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s"))
-            
-            logger.addHandler(handler)
-            return logger
-        
         log.info("[FaultTolerantHeavyTick] Initialized with resilience features + multi-agent support")
+    
+    def _create_file_logger(self, name: str, path: Path) -> logging.Logger:
+        """Create a dedicated file logger."""
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        
+        handler = logging.FileHandler(path, encoding="utf-8")
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s"))
+        
+        logger.addHandler(handler)
+        return logger
     
     async def start(self) -> None:
         """Start Heavy Tick loop with health monitoring."""
