@@ -47,7 +47,6 @@ from core.skill_library import SkillLibrary
 from core.multi_agent_integration import MultiAgentSystem, create_multi_agent_system
 from core.multi_agent import AgentRole
 
-
 # Stage 29 - Long-term Memory
 from core.memory.memory_consolidation import MemoryConsolidation as LongTermMemoryConsolidation
 from core.memory.semantic_memory import SemanticMemory
@@ -132,9 +131,9 @@ def ensure_directories(cfg: dict) -> None:
         ROOT_DIR / "milestones",
         ROOT_DIR / "sandbox",
         ROOT_DIR / "data",
-        ROOT_DIR / "memory" / "multi_agent",  # multi-agent storage
-        ROOT_DIR / "memory" / "semantic",     # semantic memory
-        ROOT_DIR / "memory" / "self_evolution",  # evolution storage
+        ROOT_DIR / "memory" / "multi_agent",
+        ROOT_DIR / "memory" / "semantic",
+        ROOT_DIR / "memory" / "self_evolution",
     ]
     for p in dirs:
         p.mkdir(parents=True, exist_ok=True)
@@ -260,7 +259,7 @@ async def _dream_loop(dream: DreamMode, stop_event: asyncio.Event, logger: loggi
 async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: asyncio.Event, logger: logging.Logger) -> None:
     logger.info("MemoryConsolidation loop started.")
     while not stop_event.is_set():
-        await asyncio.sleep(3600)  # Check every hour
+        await asyncio.sleep(3600)
         if stop_event.is_set():
             break
         if consolidator.should_consolidate():
@@ -272,17 +271,16 @@ async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: asy
                 logger.error(f"MemoryConsolidation error: {e}")
     logger.info("MemoryConsolidation loop stopped.")
 
-async def _multi_agent_loop(coordinator: MultiAgentCoordinator, stop_event: asyncio.Event, logger: logging.Logger) -> None:
-    logger.info("🤝 Multi-Agent message polling started.")
-    poll_interval = coordinator._config.get("message_processing", {}).get("poll_interval_sec", 2)
+async def _multi_agent_loop(system: MultiAgentSystem, stop_event: asyncio.Event, logger: logging.Logger) -> None:
+    logger.info("🤝 Multi-Agent system polling started.")
+    poll_interval = 2.0
     while not stop_event.is_set():
         try:
-            processed = await coordinator.process_messages()
-            if processed > 0:
-                logger.debug(f"🤝 Processed {processed} messages from network")
+            await system.tick()
+            await asyncio.sleep(poll_interval)
         except Exception as e:
             logger.error(f"Multi-agent polling error: {e}")
-        await asyncio.sleep(poll_interval)
+            await asyncio.sleep(poll_interval)
     logger.info("🤝 Multi-Agent loop stopped.")
 
 async def _longterm_memory_loop(
@@ -294,27 +292,20 @@ async def _longterm_memory_loop(
 ) -> None:
     logger.info("🧠 Long-term Memory consolidation loop started.")
     while not stop_event.is_set():
-        await asyncio.sleep(7200)  # Every 2 hours
+        await asyncio.sleep(7200)
         if stop_event.is_set():
             break
         
         try:
-            # Get recent episodes
             recent = episodic_mem.get_recent_episodes(100)
-            
-            # Run consolidation cycle
             result = mem_consolidation.run_consolidation_cycle(recent)
             logger.info(
                 f"🧠 Memory consolidation: consolidated={result['consolidated']}, "
                 f"forgotten={result['forgotten']}, total={result['total_memories']}"
             )
-            
-            # Extract knowledge to semantic memory
             for episode in recent:
                 semantic_mem.extract_knowledge_from_episode(episode)
-            
             logger.debug("🧠 Semantic knowledge extraction complete")
-            
         except Exception as e:
             logger.error(f"🧠 Long-term memory error: {e}")
     
@@ -326,9 +317,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     log_dir = Path(cfg["logging"]["dir"])
     start_time = time.time()
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # 🔥 HOT RELOADER INITIALIZATION
-    # ═══════════════════════════════════════════════════════════════════════════
+    # 🔥 HOT RELOADER
     hot_reload_cfg = cfg.get("hot_reload", {})
     hot_reload_enabled = bool(hot_reload_cfg.get("enabled", False))
     hot_reloader = None
@@ -345,7 +334,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             auto_reload=auto_reload
         )
         
-        # Blacklist critical modules
         for module_name in blacklist:
             hot_reloader.blacklist_module(module_name)
         
@@ -358,7 +346,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         logger.info("🔥 ═══════════════════════════════════════════════════")
     else:
         logger.info("🔥 Hot Reloader: disabled")
-    # ═══════════════════════════════════════════════════════════════════════════
 
     mem = EpisodicMemory(Path(cfg["memory"]["episodic_db"]))
     mem.init()
@@ -530,10 +517,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("MetaCognition disabled.")
 
-    # ============================================================
-    # 8-Layer Cognitive Architecture + Stages 26-30
-    # ============================================================
-    
     # Layer 2: Tool Registry
     tool_registry = ToolRegistry()
     initialize_default_tools(tool_registry, allowed_dirs=[ROOT_DIR / "sandbox", ROOT_DIR / "data"])
@@ -560,71 +543,41 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("📚 SkillLibrary disabled.")
     
-    # Stage 27: Multi-Agent Communication (Basic)
+    # Stage 27-28: Multi-Agent System (Phase 3)
     multi_agent_cfg = cfg.get("multi_agent", {})
     multi_agent_enabled = bool(multi_agent_cfg.get("enabled", False))
-    multi_agent_coordinator = None
+    multi_agent_system = None
     if multi_agent_enabled and skill_library:
         agent_id = f"{multi_agent_cfg.get('agent_name', 'primary')}_{int(time.time())}"
         storage_dir = ROOT_DIR / "memory"
-        shared_registry = Path(multi_agent_cfg.get("shared_storage", {}).get("registry_path", "memory/multi_agent/shared_registry.json"))
-        shared_messages = Path(multi_agent_cfg.get("shared_storage", {}).get("message_storage", "memory/multi_agent/shared_messages"))
-        if not shared_registry.is_absolute():
-            shared_registry = ROOT_DIR / shared_registry
-        if not shared_messages.is_absolute():
-            shared_messages = ROOT_DIR / shared_messages
-        shared_registry.parent.mkdir(parents=True, exist_ok=True)
-        shared_messages.mkdir(parents=True, exist_ok=True)
         
-        multi_agent_coordinator = MultiAgentCoordinator(
+        role_str = multi_agent_cfg.get("agent_name", "primary").lower()
+        if "coordinator" in role_str:
+            agent_role = AgentRole.COORDINATOR
+        elif "specialist" in role_str:
+            agent_role = AgentRole.SPECIALIST
+        else:
+            agent_role = AgentRole.WORKER
+        
+        multi_agent_system = create_multi_agent_system(
             agent_id=agent_id,
             agent_name=multi_agent_cfg.get("agent_name", "primary"),
             specialization=multi_agent_cfg.get("specialization", "general"),
+            role=agent_role,
             skill_library=skill_library,
+            ollama_client=ollama,
             config=multi_agent_cfg,
             storage_dir=storage_dir,
         )
-        ma_stats = multi_agent_coordinator.get_stats()
-        logger.info(f"🤝 MultiAgentCoordinator ready. agent_id={agent_id[:20]}... online_agents={ma_stats['registry']['online_agents']}")
         
-        # ========== Stage 28: Advanced Multi-Agent ==========
-        task_delegation = TaskDelegation(
-            agent_id=agent_id,
-            message_broker=multi_agent_coordinator._broker,
-            state_path=storage_dir / "multi_agent" / f"task_delegation_{agent_id}.json"
-        )
-        consensus_builder = ConsensusBuilder(
-            agent_id=agent_id,
-            message_broker=multi_agent_coordinator._broker,
-            state_path=storage_dir / "multi_agent" / f"consensus_{agent_id}.json"
-        )
-        agent_roles = AgentRoleManager(
-            agent_id=agent_id,
-            state_path=storage_dir / "multi_agent" / f"agent_roles_{agent_id}.json"
-        )
-        
-        multi_agent_coordinator._task_delegation = task_delegation
-        multi_agent_coordinator._consensus_builder = consensus_builder
-        multi_agent_coordinator._role_manager = agent_roles
-        
-        agent_roles.assign_role(
-            role="coordinator" if "coordinator" in multi_agent_cfg.get("agent_name", "").lower() else "specialist"
-        )
-        
-        td_stats = task_delegation.get_stats()
-        cb_stats = consensus_builder.get_stats()
-        ar_stats = agent_roles.get_all_stats()
-        
-        logger.info(f"⚙️  TaskDelegation ready. created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
-        logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['proposals_created']} votes={cb_stats['votes_cast']} decisions={cb_stats['decisions_made']}")
-        logger.info(f"🎭 AgentRoles ready. (stats not yet implemented)")
-        
+        ma_stats = multi_agent_system.get_stats()
+        logger.info(f"🤝 MultiAgentSystem ready. agent_id={agent_id[:20]}... total_agents={ma_stats.get('total_agents', 0)}")
     elif multi_agent_enabled and not skill_library:
         logger.warning("🤝 MultiAgent requires SkillLibrary. Enable skills to use multi-agent features.")
     else:
-        logger.info("🤝 MultiAgentCoordinator disabled.")
+        logger.info("🤝 MultiAgentSystem disabled.")
     
-    # ========== Stage 29: Long-term Memory ==========
+    # Stage 29: Long-term Memory
     longterm_memory_cfg = cfg.get("longterm_memory", {})
     longterm_enabled = bool(longterm_memory_cfg.get("enabled", True))
     
@@ -650,12 +603,11 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     else:
         logger.info("🧠 Long-term Memory disabled.")
     
-    # ========== Stage 30: Self-Evolution (COMPLETE!) ==========
+    # Stage 30: Self-Evolution
     evolution_cfg = cfg.get("self_evolution", {})
     evolution_enabled = bool(evolution_cfg.get("enabled", True))
-    evolution_mode = evolution_cfg.get("mode", "supervised")  # supervised, semi_autonomous, autonomous
+    evolution_mode = evolution_cfg.get("mode", "supervised")
     
-    # Initialize all 8 components
     self_evolution = None
     llm_code_assistant = None
     safety_validator = None
@@ -676,19 +628,15 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
             "autonomous": EvolutionMode.AUTONOMOUS
         }
         
-        # Core manager
         self_evolution = SelfEvolutionManager(
             storage_dir=ROOT_DIR / "memory",
             mode=mode_map.get(evolution_mode, EvolutionMode.SUPERVISED)
         )
         
-        # Priority 1: Critical components
         llm_code_assistant = LLMCodeAssistant(ollama)
         safety_validator = SafetyValidator()
         performance_monitor = PerformanceMonitor(storage_dir)
         auto_rollback = AutoRollbackHandler()
-        
-        # Priority 2: Advanced components
         dependency_analyzer = DependencyAnalyzer(ROOT_DIR)
         priority_queue = PriorityQueue(storage_dir)
         rate_limiter = EvolutionRateLimiter(
@@ -699,7 +647,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         )
         canary_deployment = CanaryDeployment(storage_dir)
         
-        # Get stats
         ev_stats = self_evolution.get_stats()
         llm_stats = llm_code_assistant.get_stats()
         safe_stats = safety_validator.get_stats()
@@ -815,7 +762,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         user_model=user_model,
         proactive=proactive,
         meta_optimizer=meta_optimizer,
-        multi_agent_coordinator=multi_agent_coordinator,
+        multi_agent_coordinator=multi_agent_system,
     )
     logger.info("⚡ FaultTolerantHeavyTick initialized with FULL ARCHITECTURE.")
 
@@ -839,12 +786,10 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         "proactive": proactive,
         "meta_optimizer": meta_optimizer,
         "goal_oriented": goal_oriented,
-        "multi_agent": multi_agent_coordinator,
-        # Stage 29
+        "multi_agent": multi_agent_system,
         "memory_consolidation": mem_consolidation,
         "semantic_memory": semantic_memory,
         "memory_retrieval": memory_retrieval,
-        # Stage 30 (COMPLETE)
         "self_evolution": self_evolution,
         "llm_code_assistant": llm_code_assistant,
         "safety_validator": safety_validator,
@@ -854,7 +799,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
         "priority_queue": priority_queue,
         "rate_limiter": rate_limiter,
         "canary_deployment": canary_deployment,
-        # 🔥 HOT RELOADER
         "hot_reloader": hot_reloader,
     }
     api = IntrospectionAPI(
@@ -904,11 +848,9 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     logger.info(f"  🧠 Learning    : {learning_stats.get('total_patterns', 0)} patterns")
     if skill_library:
         logger.info(f"  📚 Skills      : {skill_stats['total_skills']} skills, {skill_stats['total_skill_uses']} uses")
-    if multi_agent_coordinator:
-        logger.info(f"  🤝 MultiAgent  : {ma_stats['registry']['online_agents']} agents online")
-        if hasattr(multi_agent_coordinator, '_task_delegation'):
-            logger.info(f"  ⚙️  Tasks       : created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
-            logger.info(f"  🗳️  Consensus   : proposals={cb_stats['proposals_created']} votes={cb_stats['votes_cast']} decisions={cb_stats['decisions_made']}")
+    if multi_agent_system:
+        ma_stats = multi_agent_system.get_stats()
+        logger.info(f"  🤝 MultiAgent  : {ma_stats.get('total_agents', 0)} agents")
     if mem_consolidation:
         logger.info(f"  🧠 LT Memory   : {mc_stats['total_memories']} consolidated, {mc_stats['forgotten_count']} forgotten")
         logger.info(f"  📚 Semantic    : {sm_stats['total_concepts']} concepts, {sm_stats['total_facts']} facts")
@@ -936,12 +878,10 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     stop_event = asyncio.Event()
     
     def _signal_handler(signum, frame):
-        """Handle Ctrl+C and other termination signals"""
         logger.info(f"⚠️ Received signal {signal.Signals(signum).name}")
         logger.info("⚠️ Initiating graceful shutdown...")
         stop_event.set()
     
-    # Setup signal handlers for Windows
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
@@ -949,21 +889,17 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     heavy_task = asyncio.create_task(heavy.start(), name="heavy_tick")
     dream_task = asyncio.create_task(_dream_loop(dream, stop_event, logger), name="dream_loop") if dream_enabled else None
     consolidation_task = asyncio.create_task(_consolidation_loop(consolidator, stop_event, logger), name="consolidation_loop") if (consolidation_enabled and consolidator) else None
-    multi_agent_task = asyncio.create_task(_multi_agent_loop(multi_agent_coordinator, stop_event, logger), name="multi_agent_loop") if multi_agent_enabled and multi_agent_coordinator else None
+    multi_agent_task = asyncio.create_task(_multi_agent_loop(multi_agent_system, stop_event, logger), name="multi_agent_loop") if multi_agent_enabled and multi_agent_system else None
     longterm_memory_task = asyncio.create_task(
         _longterm_memory_loop(mem_consolidation, semantic_memory, mem, stop_event, logger),
         name="longterm_memory_loop"
     ) if (longterm_enabled and mem_consolidation) else None
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # 🔥 MAIN LOOP WITH HOT RELOAD
-    # ═══════════════════════════════════════════════════════════════════════════
     tick_counter = 0
     
     async def _main_loop_with_hot_reload():
         nonlocal tick_counter
         while not stop_event.is_set():
-            # 🔥 HOT RELOAD CHECK (every iteration)
             if hot_reloader:
                 try:
                     reload_results = hot_reloader.check()
@@ -972,8 +908,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
                         for module_name, success in reload_results.items():
                             status = "✅ SUCCESS" if success else "❌ FAILED"
                             logger.info(f"🔥    • {module_name}: {status}")
-                        
-                        # Add to memory
                         mem.add_episode(
                             "system.hot_reload",
                             f"Hot reloaded {len(reload_results)} module(s): {', '.join(reload_results.keys())}",
@@ -982,16 +916,11 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
                         )
                 except Exception as e:
                     logger.error(f"🔥 Hot reload check failed: {e}")
-            
-            # Regular main loop sleep
             await asyncio.sleep(1)
             tick_counter += 1
     
-    # Start hot reload monitoring loop
     hot_reload_task = asyncio.create_task(_main_loop_with_hot_reload(), name="hot_reload_loop") if hot_reloader else None
-    # ═══════════════════════════════════════════════════════════════════════════
 
-    # Wait for stop signal
     await stop_event.wait()
 
     logger.info("📦 Stopping components...")
@@ -1002,7 +931,6 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
     if api_enabled:
         await api.stop()
 
-    # Cancel all background tasks
     tasks_to_cancel = [light_task, heavy_task]
     if dream_task is not None:
         tasks_to_cancel.append(dream_task)
