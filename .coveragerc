@@ -1,0 +1,48 @@
+# Coverage Configuration
+
+[run]
+source = core
+omit =
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */site-packages/*
+    */venv/*
+    */virtualenv/*
+
+[report]
+# Minimum coverage required
+fail_under = 80
+
+# Report formatting
+precision = 2
+show_missing = True
+skip_covered = False
+skip_empty = False
+
+# Exclude lines from coverage
+exclude_lines =
+    # Standard exclusions
+    pragma: no cover
+    def __repr__
+    def __str__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+    
+    # Debug code
+    if self.debug:
+    if settings.DEBUG
+    
+    # Defensive programming
+    pass
+    \.\.\.  # Ellipsis
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml
