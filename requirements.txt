@@ -31,5 +31,7 @@ playwright>=1.42.0
 openai-whisper>=20231117
 networkx>=3.2
 
+# Phase 3 uses stdlib (smtplib, imaplib, shutil) + httpx (already included)
+
 # Action tools (optional)
 win10toast>=0.9; platform_system=="Windows"
