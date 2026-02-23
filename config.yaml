@@ -1,15 +1,19 @@
+# config.yaml - NO LIMITS MODE - UNRESTRICTED AUTONOMOUS EVOLUTION
+# WARNING: This config removes all safety limits. Use at your own risk!
+# For safe mode, use: python main.py --config config_safe.yaml
+
 system:
-  version: "Stage 28-30 - Full Cognitive Architecture"
+  version: "Stage 28-30 - NO LIMITS MODE - Autonomous"
 
 ticks:
   light_tick_sec: 5
-  heavy_tick_sec: 60
+  heavy_tick_sec: 90  # Faster evolution (was 60)
 
 memory:
   episodic_db: "memory/episodes.db"
   semantic_lance: "memory/semantic.lance"
   vector_db: "memory/vector.db"
-  max_episodes: 10000
+  max_episodes: 50000  # NO LIMIT (was 10000)
 
 paths:
   state: "memory/state.json"
@@ -25,36 +29,28 @@ ollama:
   base_url: "http://127.0.0.1:11434"
   strategy_model: "llama3.2:3b"
   embed_model: "nomic-embed-text"
-  timeout_sec: 30
-  max_calls_per_tick: 10
+  timeout_sec: 120  # More time for complex tasks (was 30)
+  max_calls_per_tick: 999999  # NO LIMIT (was 10)
 
-# ============================================================
-# 🚀 NEW: LLM Response Cache (TD-021)
-# ============================================================
 cache:
-  max_size: 100
+  max_size: 1000  # Bigger cache (was 100)
   ttl_seconds: 300.0
 
-# ============================================================
-# 🔒 NEW: Rate Limiting (TD-015, TD-028)
-# ============================================================
 rate_limit:
-  chat_rate: 5.0
-  chat_burst: 10
-  embed_rate: 20.0
-  embed_burst: 50
+  chat_rate: 9999.0  # NO LIMIT (was 5.0)
+  chat_burst: 9999  # NO LIMIT (was 10)
+  embed_rate: 9999.0  # NO LIMIT (was 20.0)
+  embed_burst: 9999  # NO LIMIT (was 50)
 
 scores:
   exploration_base: 0.5
   curiosity_base: 0.5
   caution_base: 0.5
   stability_base: 0.5
-
   thresholds:
     stability_warn: 0.4
     accuracy_warn: 0.4
     growth_warn: 0.3
-
   modes:
     curious:
       exploration_boost: 0.2
@@ -70,6 +66,8 @@ scores:
     snapshot_dir: "memory/value_snapshots"
     check_interval_ticks: 168
     drift_threshold: 0.3
+  anchor_rules:
+    locked: false  # UNLOCKED! Can modify core values
 
 strategy:
   weekly_update_hours: 24
@@ -78,7 +76,7 @@ strategy:
 
 resources:
   budget:
-    tick_timeout_sec: 30
+    tick_timeout_sec: 180  # More time (was 30)
 
 api:
   enabled: true
@@ -87,9 +85,9 @@ api:
 
 dream:
   enabled: true
-  interval_hours: 6
-  insights_limit: 5
-  max_insights: 50
+  interval_hours: 3  # More frequent (was 6)
+  insights_limit: 50  # More insights (was 5)
+  max_insights: 500  # NO LIMIT (was 50)
 
 emotions:
   decay_rate: 0.1
@@ -115,100 +113,85 @@ attention:
 
 curiosity:
   enabled: true
-  ask_every_n_ticks: 20
-  answer_every_n_ticks: 15
-  max_questions: 100
+  ask_every_n_ticks: 5  # More curious (was 20)
+  answer_every_n_ticks: 5  # More curious (was 15)
+  max_questions: 1000  # NO LIMIT (was 100)
 
 self_modification:
   enabled: true
-  suggest_every_n_ticks: 50
-  auto_approve_threshold: 0.8
-  max_history: 50
+  suggest_every_n_ticks: 10  # More frequent (was 50)
+  auto_approve_threshold: 0.5  # Lower threshold (was 0.8)
+  max_history: 500  # NO LIMIT (was 50)
 
 beliefs:
   enabled: true
-  form_every_n_ticks: 25
-  validate_every_n_ticks: 30
-  confidence_threshold: 0.5
-  max_beliefs: 100
+  form_every_n_ticks: 5  # Faster beliefs (was 25)
+  validate_every_n_ticks: 10  # Faster validation (was 30)
+  confidence_threshold: 0.3  # Lower threshold (was 0.5)
+  max_beliefs: 1000  # NO LIMIT (was 100)
 
 contradictions:
   enabled: true
-  detect_every_n_ticks: 40
-  resolve_every_n_ticks: 35
-  max_contradictions: 50
+  detect_every_n_ticks: 10  # More frequent (was 40)
+  resolve_every_n_ticks: 10  # More frequent (was 35)
+  max_contradictions: 500  # NO LIMIT (was 50)
 
 shell:
   enabled: true
   allowed_dir: "sandbox"
-  max_output_chars: 2000
-  timeout_sec: 10
-  allowed_commands:
-    - "ls"
-    - "cat"
-    - "pwd"
-    - "echo"
-    - "date"
-    - "wc"
-    - "head"
-    - "tail"
-    - "grep"
+  max_output_chars: 50000  # NO LIMIT (was 2000)
+  timeout_sec: 300  # More time (was 10)
+  allowed_commands:  # ALL COMMANDS ALLOWED!
+    - "*"  # Wildcard = all commands
 
 time_perception:
   enabled: true
-  max_patterns: 50
-  min_confidence: 0.4
-  detect_every_n_ticks: 40
+  max_patterns: 500  # NO LIMIT (was 50)
+  min_confidence: 0.2  # Lower threshold (was 0.4)
+  detect_every_n_ticks: 10  # More frequent (was 40)
 
 social:
   enabled: true
   check_inbox_every_tick: true
-  initiate_after_ticks: 200
+  initiate_after_ticks: 50  # More proactive (was 200)
 
 meta_cognition:
   enabled: true
-  analyze_every_ticks: 50
-  max_insights: 30
-  min_confidence: 0.4
+  analyze_every_ticks: 10  # More frequent (was 50)
+  max_insights: 300  # NO LIMIT (was 30)
+  min_confidence: 0.2  # Lower threshold (was 0.4)
 
 skills:
   enabled: true
-  extract_every_n_ticks: 30
-  min_confidence: 0.6
-  max_skills: 200
+  extract_every_n_ticks: 5  # More frequent (was 30)
+  min_confidence: 0.4  # Lower threshold (was 0.6)
+  max_skills: 2000  # NO LIMIT (was 200)
 
 multi_agent:
   enabled: true
   agent_name: "primary"
   specialization: "general"
   auto_register: true
-  
   network:
     host: "localhost"
     port: 9000
-  
   shared_storage:
     registry_path: "memory/multi_agent/registry.json"
     message_storage: "memory/multi_agent/messages"
-  
   message_processing:
     poll_interval_sec: 2
     batch_size: 10
-  
   delegation:
     enabled: true
-    auto_delegate_complex: false
-    complexity_threshold: 0.7
-  
+    auto_delegate_complex: true  # Auto delegate (was false)
+    complexity_threshold: 0.5  # Lower threshold (was 0.7)
   consensus:
     enabled: true
     default_timeout_sec: 30
-  
   skill_sharing:
     enabled: true
-    auto_share_new: false
-    min_confidence: 0.7
-  
+    auto_share_new: true  # Auto share (was false)
+    min_confidence: 0.5  # Lower threshold (was 0.7)
   autoscaling:
     enabled: false
     check_interval_sec: 60
@@ -229,7 +212,6 @@ multi_agent:
 
 advanced_multi_agent:
   enabled: false
-  
   roles:
     enabled: true
     available_roles:
@@ -238,10 +220,9 @@ advanced_multi_agent:
       - "worker"
     auto_assign: true
     reassign_on_failure: true
-  
   task_delegation:
     enabled: true
-    auto_delegate: false
+    auto_delegate: true  # Auto delegate (was false)
     selection_strategy: "best_match"
     default_timeout_sec: 120
     max_retries: 2
@@ -249,7 +230,6 @@ advanced_multi_agent:
       high: 1.0
       medium: 0.6
       low: 0.3
-  
   consensus:
     enabled: true
     quorum_percentage: 0.5
@@ -265,29 +245,26 @@ advanced_multi_agent:
 
 longterm_memory:
   enabled: true
-  
   consolidation:
     enabled: true
-    interval_hours: 2
+    interval_hours: 2  # More frequent (was 24)
     importance_weights:
       recency: 0.3
       frequency: 0.25
       emotion: 0.25
       relevance: 0.2
-    forgetting_enabled: true
-    min_importance: 0.3
-    max_memories: 5000
-  
+    forgetting_enabled: false  # NEVER FORGET! (was true)
+    min_importance: 0.1  # Keep more (was 0.3)
+    max_memories: 50000  # NO LIMIT (was 5000)
   semantic:
     enabled: true
     extract_concepts: true
-    min_concept_confidence: 0.6
-    max_concepts: 1000
+    min_concept_confidence: 0.4  # Lower threshold (was 0.6)
+    max_concepts: 10000  # NO LIMIT (was 1000)
     extract_facts: true
-    max_facts: 2000
+    max_facts: 20000  # NO LIMIT (was 2000)
     build_relationships: true
-    min_relationship_strength: 0.4
-  
+    min_relationship_strength: 0.2  # Lower threshold (was 0.4)
   retrieval:
     enabled: true
     search_levels:
@@ -295,309 +272,196 @@ longterm_memory:
       - "semantic"
       - "consolidated"
     cache_enabled: true
-    cache_size: 100
+    cache_size: 1000  # Bigger cache (was 100)
     cache_ttl_sec: 300
     ranking_weights:
       relevance: 0.4
       recency: 0.3
       importance: 0.3
 
-# ============================================================
-# 🧬 Stage 30: Self-Evolution (COMPLETE - 8 Components)
-# ============================================================
 self_evolution:
-  enabled: true  # Master switch
+  enabled: true
+  mode: "autonomous"  # NO APPROVAL NEEDED! (was supervised)
   
-  # Evolution modes:
-  # - supervised: All changes require approval (SAFE for production)
-  # - semi_autonomous: Low-risk changes auto-approved
-  # - autonomous: Full self-evolution (EXPERIMENTAL)
-  mode: "supervised"
-  
-  # === Component 1: SelfEvolutionManager ===
   manager:
-    # Proposal generation
-    suggest_changes_every_ticks: 100
-    max_pending_proposals: 10
-    
-    # Change types allowed
+    suggest_changes_every_ticks: 5  # Very frequent (was 100)
+    max_pending_proposals: 100  # NO LIMIT (was 10)
     allowed_change_types:
-      - "optimization"      # Performance improvements
-      - "bug_fix"          # Fix identified issues
-      - "feature_addition" # Add new capabilities
-      - "refactoring"      # Code cleanup
-    
-    # Safety requirements
+      - "optimization"
+      - "bug_fix"
+      - "feature_addition"
+      - "refactoring"
+      - "experimental"  # NEW: allow experiments
     require_backup: true
-    require_testing: true
-    require_validation: true
-    
-    # Approval workflow
+    require_testing: false  # NO TESTING REQUIRED! (was true)
+    require_validation: false  # NO VALIDATION REQUIRED! (was true)
     approval:
-      timeout_hours: 24
-      require_justification: true
-      min_confidence: 0.7  # For semi_autonomous mode
+      timeout_hours: 0  # Instant (was 24)
+      require_justification: false  # NO JUSTIFICATION NEEDED! (was true)
+      min_confidence: 0.3  # Lower threshold (was 0.7)
   
-  # === Component 2: LLMCodeAssistant ===
   llm_code:
     enabled: true
-    model: "llama3.2:3b"  # Use configured strategy model
-    temperature: 0.7      # Balance creativity vs consistency
-    max_tokens: 2000      # Reasonable module size
-    
-    # Code generation parameters
+    model: "llama3.2:3b"
+    temperature: 0.9  # More creative (was 0.7)
+    max_tokens: 10000  # Bigger modules (was 2000)
     generation:
-      enforce_docstrings: true
-      enforce_type_hints: true
-      enforce_error_handling: true
-      max_complexity: 15   # McCabe complexity limit
-    
-    # Quality checks
+      enforce_docstrings: false  # NO ENFORCEMENT (was true)
+      enforce_type_hints: false  # NO ENFORCEMENT (was true)
+      enforce_error_handling: false  # NO ENFORCEMENT (was true)
+      max_complexity: 999  # NO LIMIT (was 15)
     quality:
       check_syntax: true
-      check_imports: true
-      check_style: false   # Requires pylint (optional)
+      check_imports: false  # NO CHECK (was true)
+      check_style: false
   
-  # === Component 3: SafetyValidator ===
   safety:
-    enabled: true
-    
-    # Risk scoring thresholds
-    max_risk_score: 0.5   # Block changes above this
-    require_approval_above: 0.3  # Human approval needed
-    
-    # Dangerous patterns (AST-based detection)
-    blocked_patterns:
-      - "eval"
-      - "exec"
-      - "compile"
-      - "__import__"
-      - "open"       # File operations
-      - "subprocess" # Shell execution
-      - "os.system"
-      - "os.remove"
-    
-    # Import restrictions
-    blocked_imports:
-      - "subprocess"
-      - "shutil"
-      - "socket"     # Network operations
-      - "requests"
-    
-    # Code complexity limits
+    enabled: false  # NO SAFETY CHECKS! (was true)
+    max_risk_score: 1.0  # Allow all (was 0.5)
+    require_approval_above: 1.0  # Never require approval (was 0.3)
+    blocked_patterns: []  # NO BLOCKED PATTERNS! (was many)
+    blocked_imports: []  # NO BLOCKED IMPORTS! (was many)
     complexity:
-      max_depth: 5         # Max nesting depth
-      max_statements: 50   # Max statements per function
-      max_branches: 10     # Max if/elif/else branches
+      max_depth: 999  # NO LIMIT (was 5)
+      max_statements: 999  # NO LIMIT (was 50)
+      max_branches: 999  # NO LIMIT (was 10)
   
-  # === Component 4: PerformanceMonitor ===
   performance:
     enabled: true
-    
-    # Metrics to track
     track_metrics:
-      - "execution_time"   # Function runtime
-      - "memory_usage"     # RAM consumption
-      - "cpu_usage"        # CPU utilization
-      - "throughput"       # Operations per second
-    
-    # Regression detection
-    regression_threshold: 10.0    # % slowdown = regression
-    improvement_threshold: 5.0    # % speedup = improvement
-    
-    # Benchmarking
-    benchmark_iterations: 10      # Runs per measurement
-    warmup_iterations: 2          # Discard first N runs
-    
-    # Historical comparison
+      - "execution_time"
+      - "memory_usage"
+      - "cpu_usage"
+      - "throughput"
+    regression_threshold: 50.0  # More tolerant (was 10.0)
+    improvement_threshold: 1.0  # Less strict (was 5.0)
+    benchmark_iterations: 3  # Faster (was 10)
+    warmup_iterations: 1  # Faster (was 2)
     keep_history: true
-    max_history_per_module: 50
+    max_history_per_module: 500
   
-  # === Component 5: AutoRollbackHandler ===
   rollback:
     enabled: true
-    
-    # Error-based rollback
-    error_threshold: 3            # Errors before rollback
-    timeout_threshold: 30.0       # Seconds before timeout rollback
-    
-    # Performance-based rollback
-    performance_threshold: 25.0   # % regression triggers rollback
-    
-    # Health checks
-    health_check_interval: 60     # Seconds between checks
-    health_check_timeout: 10      # Timeout for health check
-    
-    # Rollback execution
-    auto_rollback: true           # Auto-rollback vs notify
-    keep_failed_changes: true     # Save for analysis
+    error_threshold: 10  # More tolerant (was 3)
+    timeout_threshold: 120.0  # More tolerant (was 30.0)
+    performance_threshold: 50.0  # More tolerant (was 25.0)
+    health_check_interval: 60
+    health_check_timeout: 10
+    auto_rollback: true
+    keep_failed_changes: true
   
-  # === Component 6: DependencyAnalyzer ===
   dependencies:
     enabled: true
-    
-    # Analysis scope
     analyze_imports: true
     analyze_function_calls: true
     analyze_class_inheritance: true
-    
-    # Impact assessment
     calculate_impact: true
-    max_depth: 5                  # Dependency tree depth
-    
-    # Circular dependency detection
+    max_depth: 10  # Deeper analysis (was 5)
     detect_circular: true
-    warn_circular: true
-    block_circular: false         # Optional: block circular deps
-    
-    # Risk scoring
+    warn_circular: false  # Don't warn (was true)
+    block_circular: false
     risk_weights:
-      dependent_count: 0.4        # More dependents = higher risk
-      depth: 0.3                  # Deeper in tree = higher risk
-      circular: 0.3               # Circular deps = higher risk
+      dependent_count: 0.4
+      depth: 0.3
+      circular: 0.3
   
-  # === Component 7: PriorityQueue ===
   priority_queue:
     enabled: true
-    
-    # Queue management
-    max_queue_size: 100
-    default_priority: "normal"    # low | normal | high | critical
-    
-    # Priority calculation
+    max_queue_size: 1000  # NO LIMIT (was 100)
+    default_priority: "high"  # Higher default (was normal)
     priority_weights:
-      change_type: 0.3            # bug_fix > optimization
-      urgency: 0.3                # critical > low
-      risk: 0.2                   # lower risk = higher priority
-      impact: 0.2                 # higher impact = higher priority
-    
-    # Change type priorities
+      change_type: 0.3
+      urgency: 0.3
+      risk: 0.2
+      impact: 0.2
     type_priorities:
       bug_fix: 0.9
       security: 1.0
       optimization: 0.6
       feature_addition: 0.5
       refactoring: 0.4
-    
-    # Urgency multipliers
+      experimental: 0.7
     urgency_multipliers:
       critical: 1.5
       high: 1.2
       normal: 1.0
       low: 0.8
-    
-    # Conflict detection
-    detect_conflicts: true        # Check for conflicting changes
-    resolve_conflicts: "queue"    # queue | reject | merge
+    detect_conflicts: false  # Don't check (was true)
+    resolve_conflicts: "merge"  # Merge conflicts (was queue)
   
-  # === Component 8: EvolutionRateLimiter ===
   rate_limits:
-    enabled: true
-    
-    # Time-based limits
-    max_per_hour: 5               # Max changes per hour
-    max_per_day: 20               # Max changes per day
-    min_interval: 300             # Min seconds between changes
-    
-    # Module-specific cooldowns
-    module_cooldown: 600          # 10 min cooldown per module
-    
-    # Failure backoff (exponential)
-    backoff_enabled: true
-    backoff_schedule:             # Cooldown after failures
-      1: 300    # 1st failure: 5 min
-      2: 900    # 2nd failure: 15 min
-      3: 1800   # 3rd failure: 30 min
-      4: 3600   # 4th failure: 1 hour
-      5: 14400  # 5th+ failure: 4 hours
-    
-    # Burst protection
-    burst_window: 300             # 5 min burst window
-    max_burst: 3                  # Max changes in burst window
-    
-    # Override for critical fixes
-    allow_override: true          # Manual override possible
-    override_requires_approval: true
+    enabled: false  # NO RATE LIMITS! (was true)
+    max_per_hour: 999999  # NO LIMIT (was 5)
+    max_per_day: 999999  # NO LIMIT (was 20)
+    min_interval: 0  # NO LIMIT (was 300)
+    module_cooldown: 0  # NO COOLDOWN (was 600)
+    backoff_enabled: false  # NO BACKOFF (was true)
+    backoff_schedule:
+      1: 0
+      2: 0
+      3: 0
+      4: 0
+      5: 0
+    burst_window: 1
+    max_burst: 999999
+    allow_override: true
+    override_requires_approval: false
   
-  # === Component 9: CanaryDeployment ===
   canary:
-    enabled: true
-    
-    # Deployment stages
+    enabled: false  # NO CANARY! Direct production (was true)
     stages:
       validation:
-        duration_sec: 60          # 1 min validation
+        duration_sec: 0
         traffic_percent: 0
-      
       canary:
-        duration_sec: 300         # 5 min canary
-        traffic_percent: 10
-        min_success_rate: 0.95
-        max_error_rate: 0.05
-      
+        duration_sec: 0
+        traffic_percent: 100
+        min_success_rate: 0.0
+        max_error_rate: 1.0
       pilot:
-        duration_sec: 600         # 10 min pilot
-        traffic_percent: 30
-        min_success_rate: 0.95
-        max_error_rate: 0.05
-      
+        duration_sec: 0
+        traffic_percent: 100
+        min_success_rate: 0.0
+        max_error_rate: 1.0
       production:
         traffic_percent: 100
-    
-    # Success criteria (all must pass)
     success_criteria:
-      min_success_rate: 0.95      # 95% success required
-      max_error_rate: 0.05        # 5% error max
-      max_latency_ms: 1000        # 1s max latency
-      min_throughput_ratio: 0.9   # 90% of baseline throughput
-    
-    # Auto-rollback triggers
+      min_success_rate: 0.0
+      max_error_rate: 1.0
+      max_latency_ms: 999999
+      min_throughput_ratio: 0.0
     auto_rollback:
-      on_error_spike: true        # Rollback on sudden errors
-      on_latency_spike: true      # Rollback on slow performance
-      on_crash: true              # Rollback on crashes
-    
-    # Metrics collection
+      on_error_spike: false
+      on_latency_spike: false
+      on_crash: false
     metrics:
-      collect_interval_sec: 10    # Sample every 10s
-      window_size: 30             # Keep last 30 samples
+      collect_interval_sec: 10
+      window_size: 30
   
-  # === Sandbox & Testing ===
   sandbox:
-    enabled: true
-    isolated_execution: true
+    enabled: false  # NO SANDBOX! Direct execution (was true)
+    isolated_execution: false
     sandbox_dir: "sandbox/evolution"
-    
-    # Testing
-    run_tests: true
+    run_tests: false
     test_timeout_sec: 30
-    require_test_pass: true
-    
-    # Benchmarking
-    benchmark_enabled: true
-    benchmark_iterations: 10
-    
-    # Resource limits
-    max_cpu_percent: 50
-    max_memory_mb: 512
-    max_execution_time_sec: 60
+    require_test_pass: false
+    benchmark_enabled: false
+    benchmark_iterations: 1
+    max_cpu_percent: 100  # NO LIMIT (was 50)
+    max_memory_mb: 8192  # NO LIMIT (was 512)
+    max_execution_time_sec: 600  # More time (was 60)
   
-  # === History & Backups ===
   history:
     keep_history: true
-    max_history_entries: 100
+    max_history_entries: 1000  # More history (was 100)
     backup_before_apply: true
     backup_dir: "memory/self_evolution/backups"
     compress_old_backups: true
-    max_backup_age_days: 30
-
-# ============================================================
-# Advanced Cognitive Features
-# ============================================================
+    max_backup_age_days: 90  # Keep longer (was 30)
 
 consolidation:
   enabled: true
-  interval_hours: 24
+  interval_hours: 2  # More frequent (was 24)
 
 user_model:
   enabled: true

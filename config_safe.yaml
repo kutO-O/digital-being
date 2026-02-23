@@ -1,0 +1,489 @@
+# config_safe.yaml - SAFE MODE with all limits enabled
+# Use this if you want conservative, controlled behavior
+# To use: python main.py --config config_safe.yaml
+
+system:
+  version: "Stage 28-30 - Full Cognitive Architecture - SAFE MODE"
+
+ticks:
+  light_tick_sec: 5
+  heavy_tick_sec: 60
+
+memory:
+  episodic_db: "memory/episodes.db"
+  semantic_lance: "memory/semantic.lance"
+  vector_db: "memory/vector.db"
+  max_episodes: 10000
+
+paths:
+  state: "memory/state.json"
+  snapshots: "memory/snapshots"
+  inbox: "inbox.txt"
+  outbox: "outbox.txt"
+
+logging:
+  level: "INFO"
+  dir: "logs"
+
+ollama:
+  base_url: "http://127.0.0.1:11434"
+  strategy_model: "llama3.2:3b"
+  embed_model: "nomic-embed-text"
+  timeout_sec: 30
+  max_calls_per_tick: 10
+
+cache:
+  max_size: 100
+  ttl_seconds: 300.0
+
+rate_limit:
+  chat_rate: 5.0
+  chat_burst: 10
+  embed_rate: 20.0
+  embed_burst: 50
+
+scores:
+  exploration_base: 0.5
+  curiosity_base: 0.5
+  caution_base: 0.5
+  stability_base: 0.5
+  thresholds:
+    stability_warn: 0.4
+    accuracy_warn: 0.4
+    growth_warn: 0.3
+  modes:
+    curious:
+      exploration_boost: 0.2
+      curiosity_boost: 0.2
+    cautious:
+      caution_boost: 0.2
+      stability_boost: 0.2
+    defensive:
+      caution_boost: 0.3
+      stability_boost: 0.3
+      exploration_penalty: -0.3
+  drift:
+    snapshot_dir: "memory/value_snapshots"
+    check_interval_ticks: 168
+    drift_threshold: 0.3
+
+strategy:
+  weekly_update_hours: 24
+  max_now_goals: 5
+  max_weekly_goals: 3
+
+resources:
+  budget:
+    tick_timeout_sec: 30
+
+api:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8766
+
+dream:
+  enabled: true
+  interval_hours: 6
+  insights_limit: 5
+  max_insights: 50
+
+emotions:
+  decay_rate: 0.1
+  min_threshold: 0.05
+
+reflection:
+  every_n_ticks: 10
+  analyze_last_episodes: 15
+
+narrative:
+  every_n_ticks: 15
+
+attention:
+  enabled: true
+  top_k: 5
+  min_score: 0.4
+  max_context_chars: 1500
+  focus_weights:
+    urgency: 0.3
+    relevance: 0.3
+    emotion: 0.2
+    novelty: 0.2
+
+curiosity:
+  enabled: true
+  ask_every_n_ticks: 20
+  answer_every_n_ticks: 15
+  max_questions: 100
+
+self_modification:
+  enabled: true
+  suggest_every_n_ticks: 50
+  auto_approve_threshold: 0.8
+  max_history: 50
+
+beliefs:
+  enabled: true
+  form_every_n_ticks: 25
+  validate_every_n_ticks: 30
+  confidence_threshold: 0.5
+  max_beliefs: 100
+
+contradictions:
+  enabled: true
+  detect_every_n_ticks: 40
+  resolve_every_n_ticks: 35
+  max_contradictions: 50
+
+shell:
+  enabled: true
+  allowed_dir: "sandbox"
+  max_output_chars: 2000
+  timeout_sec: 10
+  allowed_commands:
+    - "ls"
+    - "cat"
+    - "pwd"
+    - "echo"
+    - "date"
+    - "wc"
+    - "head"
+    - "tail"
+    - "grep"
+
+time_perception:
+  enabled: true
+  max_patterns: 50
+  min_confidence: 0.4
+  detect_every_n_ticks: 40
+
+social:
+  enabled: true
+  check_inbox_every_tick: true
+  initiate_after_ticks: 200
+
+meta_cognition:
+  enabled: true
+  analyze_every_ticks: 50
+  max_insights: 30
+  min_confidence: 0.4
+
+skills:
+  enabled: true
+  extract_every_n_ticks: 30
+  min_confidence: 0.6
+  max_skills: 200
+
+multi_agent:
+  enabled: true
+  agent_name: "primary"
+  specialization: "general"
+  auto_register: true
+  network:
+    host: "localhost"
+    port: 9000
+  shared_storage:
+    registry_path: "memory/multi_agent/registry.json"
+    message_storage: "memory/multi_agent/messages"
+  message_processing:
+    poll_interval_sec: 2
+    batch_size: 10
+  delegation:
+    enabled: true
+    auto_delegate_complex: false
+    complexity_threshold: 0.7
+  consensus:
+    enabled: true
+    default_timeout_sec: 30
+  skill_sharing:
+    enabled: true
+    auto_share_new: false
+    min_confidence: 0.7
+  autoscaling:
+    enabled: false
+    check_interval_sec: 60
+    scale_up_threshold: 0.75
+    scale_down_threshold: 0.25
+    scale_up_cooldown_sec: 300
+    scale_down_cooldown_sec: 600
+    min_agents_per_type: 1
+    max_agents_per_type: 5
+    unhealthy_threshold: 3
+    heartbeat_timeout_sec: 120
+    port_ranges:
+      research: [9101, 9150]
+      execution: [9201, 9250]
+      analysis: [9301, 9350]
+      planning: [9401, 9450]
+      testing: [9501, 9550]
+
+advanced_multi_agent:
+  enabled: false
+  roles:
+    enabled: true
+    available_roles:
+      - "coordinator"
+      - "specialist"
+      - "worker"
+    auto_assign: true
+    reassign_on_failure: true
+  task_delegation:
+    enabled: true
+    auto_delegate: false
+    selection_strategy: "best_match"
+    default_timeout_sec: 120
+    max_retries: 2
+    priority_weights:
+      high: 1.0
+      medium: 0.6
+      low: 0.3
+  consensus:
+    enabled: true
+    quorum_percentage: 0.5
+    approval_threshold: 0.6
+    use_weighted_voting: true
+    auto_resolve: true
+    proposal_timeout_sec: 60
+    proposal_types:
+      - "system_change"
+      - "resource_allocation"
+      - "task_priority"
+      - "agent_action"
+
+longterm_memory:
+  enabled: true
+  consolidation:
+    enabled: true
+    interval_hours: 24
+    importance_weights:
+      recency: 0.3
+      frequency: 0.25
+      emotion: 0.25
+      relevance: 0.2
+    forgetting_enabled: true
+    min_importance: 0.3
+    max_memories: 5000
+  semantic:
+    enabled: true
+    extract_concepts: true
+    min_concept_confidence: 0.6
+    max_concepts: 1000
+    extract_facts: true
+    max_facts: 2000
+    build_relationships: true
+    min_relationship_strength: 0.4
+  retrieval:
+    enabled: true
+    search_levels:
+      - "episodic"
+      - "semantic"
+      - "consolidated"
+    cache_enabled: true
+    cache_size: 100
+    cache_ttl_sec: 300
+    ranking_weights:
+      relevance: 0.4
+      recency: 0.3
+      importance: 0.3
+
+self_evolution:
+  enabled: true
+  mode: "supervised"  # SAFE: requires approval
+  
+  manager:
+    suggest_changes_every_ticks: 100
+    max_pending_proposals: 10
+    allowed_change_types:
+      - "optimization"
+      - "bug_fix"
+      - "feature_addition"
+      - "refactoring"
+    require_backup: true
+    require_testing: true
+    require_validation: true
+    approval:
+      timeout_hours: 24
+      require_justification: true
+      min_confidence: 0.7
+  
+  llm_code:
+    enabled: true
+    model: "llama3.2:3b"
+    temperature: 0.7
+    max_tokens: 2000
+    generation:
+      enforce_docstrings: true
+      enforce_type_hints: true
+      enforce_error_handling: true
+      max_complexity: 15
+    quality:
+      check_syntax: true
+      check_imports: true
+      check_style: false
+  
+  safety:
+    enabled: true  # SAFE: validation enabled
+    max_risk_score: 0.5
+    require_approval_above: 0.3
+    blocked_patterns:
+      - "eval"
+      - "exec"
+      - "compile"
+      - "__import__"
+      - "open"
+      - "subprocess"
+      - "os.system"
+      - "os.remove"
+    blocked_imports:
+      - "subprocess"
+      - "shutil"
+      - "socket"
+      - "requests"
+    complexity:
+      max_depth: 5
+      max_statements: 50
+      max_branches: 10
+  
+  performance:
+    enabled: true
+    track_metrics:
+      - "execution_time"
+      - "memory_usage"
+      - "cpu_usage"
+      - "throughput"
+    regression_threshold: 10.0
+    improvement_threshold: 5.0
+    benchmark_iterations: 10
+    warmup_iterations: 2
+    keep_history: true
+    max_history_per_module: 50
+  
+  rollback:
+    enabled: true
+    error_threshold: 3
+    timeout_threshold: 30.0
+    performance_threshold: 25.0
+    health_check_interval: 60
+    health_check_timeout: 10
+    auto_rollback: true
+    keep_failed_changes: true
+  
+  dependencies:
+    enabled: true
+    analyze_imports: true
+    analyze_function_calls: true
+    analyze_class_inheritance: true
+    calculate_impact: true
+    max_depth: 5
+    detect_circular: true
+    warn_circular: true
+    block_circular: false
+    risk_weights:
+      dependent_count: 0.4
+      depth: 0.3
+      circular: 0.3
+  
+  priority_queue:
+    enabled: true
+    max_queue_size: 100
+    default_priority: "normal"
+    priority_weights:
+      change_type: 0.3
+      urgency: 0.3
+      risk: 0.2
+      impact: 0.2
+    type_priorities:
+      bug_fix: 0.9
+      security: 1.0
+      optimization: 0.6
+      feature_addition: 0.5
+      refactoring: 0.4
+    urgency_multipliers:
+      critical: 1.5
+      high: 1.2
+      normal: 1.0
+      low: 0.8
+    detect_conflicts: true
+    resolve_conflicts: "queue"
+  
+  rate_limits:
+    enabled: true  # SAFE: rate limits enabled
+    max_per_hour: 5
+    max_per_day: 20
+    min_interval: 300
+    module_cooldown: 600
+    backoff_enabled: true
+    backoff_schedule:
+      1: 300
+      2: 900
+      3: 1800
+      4: 3600
+      5: 14400
+    burst_window: 300
+    max_burst: 3
+    allow_override: true
+    override_requires_approval: true
+  
+  canary:
+    enabled: true
+    stages:
+      validation:
+        duration_sec: 60
+        traffic_percent: 0
+      canary:
+        duration_sec: 300
+        traffic_percent: 10
+        min_success_rate: 0.95
+        max_error_rate: 0.05
+      pilot:
+        duration_sec: 600
+        traffic_percent: 30
+        min_success_rate: 0.95
+        max_error_rate: 0.05
+      production:
+        traffic_percent: 100
+    success_criteria:
+      min_success_rate: 0.95
+      max_error_rate: 0.05
+      max_latency_ms: 1000
+      min_throughput_ratio: 0.9
+    auto_rollback:
+      on_error_spike: true
+      on_latency_spike: true
+      on_crash: true
+    metrics:
+      collect_interval_sec: 10
+      window_size: 30
+  
+  sandbox:
+    enabled: true
+    isolated_execution: true
+    sandbox_dir: "sandbox/evolution"
+    run_tests: true
+    test_timeout_sec: 30
+    require_test_pass: true
+    benchmark_enabled: true
+    benchmark_iterations: 10
+    max_cpu_percent: 50
+    max_memory_mb: 512
+    max_execution_time_sec: 60
+  
+  history:
+    keep_history: true
+    max_history_entries: 100
+    backup_before_apply: true
+    backup_dir: "memory/self_evolution/backups"
+    compress_old_backups: true
+    max_backup_age_days: 30
+
+consolidation:
+  enabled: true
+  interval_hours: 24
+
+user_model:
+  enabled: true
+
+proactive:
+  enabled: true
+
+meta_learning:
+  enabled: true
