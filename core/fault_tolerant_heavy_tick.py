@@ -219,13 +219,26 @@ class FaultTolerantHeavyTick(FaultTolerantHeavyTickImpl, FaultTolerantHeavyTickS
         self._curiosity_enabled = bool(_cur_cfg.get("enabled", True))
         
         # Loggers
-        from core.heavy_tick import HeavyTick
-        self._monologue_log = HeavyTick._make_file_logger(
+        self._monologue_log = self._create_file_logger(
             "digital_being.monologue", log_dir / "monologue.log"
         )
-        self._decision_log = HeavyTick._make_file_logger(
+        self._decision_log = self._create_file_logger(
             "digital_being.decisions", log_dir / "decisions.log"
         )
+        
+        # И добавить метод:
+        def _create_file_logger(self, name: str, path: Path) -> logging.Logger:
+            """Create a dedicated file logger."""
+            logger = logging.getLogger(name)
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
+            
+            handler = logging.FileHandler(path, encoding="utf-8")
+            handler.setLevel(logging.INFO)
+            handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s"))
+            
+            logger.addHandler(handler)
+            return logger
         
         log.info("[FaultTolerantHeavyTick] Initialized with resilience features + multi-agent support")
     
