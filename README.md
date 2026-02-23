@@ -162,6 +162,117 @@ python main.py
 
 Система начнёт работу, создаст `memory/state.json` и будет работать непрерывно.
 
+## Разработка
+
+### 🛠️ Установка для разработки
+
+```bash
+# Установить все зависимости (production + development)
+make dev-install
+
+# Или вручную:
+pip install -r requirements-dev.txt
+```
+
+### 🧪 Тестирование
+
+```bash
+# Запустить все тесты
+make test
+
+# С coverage отчётом
+make test-cov
+
+# Только быстрые тесты
+make test-fast
+
+# Или напрямую через pytest:
+pytest -v
+pytest --cov=core --cov-report=html
+```
+
+**Coverage:** ~70% для tested модулей (hot_reloader, self_modification)
+
+Подробнее см. [`tests/README.md`](tests/README.md)
+
+### 🔍 Type Checking
+
+```bash
+# Проверить типы с MyPy
+make mypy
+
+# Или напрямую:
+mypy core/
+```
+
+**Конфигурация:** [`mypy.ini`](mypy.ini)
+- Strict mode для core модулей (hot_reloader, self_modification, circuit_breaker)
+- Gradual typing для остальных
+
+### 🎨 Code Quality
+
+```bash
+# Форматирование кода
+make format
+
+# Линтинг
+make lint
+
+# Всё вместе (тесты + mypy + lint)
+make check
+```
+
+### 📊 Статистика проекта
+
+```bash
+# Показать статистику (строки кода, тесты, coverage)
+make stats
+```
+
+### 🧹 Очистка
+
+```bash
+# Удалить временные файлы и кэши
+make clean
+```
+
+### ⚡ Makefile команды
+
+Полный список команд:
+```bash
+make help
+```
+
+**Доступные команды:**
+- `install` — установить production зависимости
+- `dev-install` — установить dev зависимости
+- `test` — запустить тесты
+- `test-cov` — тесты с coverage
+- `test-fast` — только быстрые тесты
+- `mypy` — проверка типов
+- `lint` — линтинг
+- `format` — форматирование
+- `check` — все проверки
+- `clean` — очистка
+- `run` — запустить Digital Being
+- `stats` — статистика проекта
+
+### 🤝 Contributing
+
+1. **Fork** репозиторий
+2. Создай **feature branch** (`git checkout -b feature/amazing`)
+3. **Пиши тесты** для нового кода
+4. Убедись что **все проверки проходят** (`make check`)
+5. **Commit** изменения (`git commit -m 'Add amazing feature'`)
+6. **Push** в branch (`git push origin feature/amazing`)
+7. Открой **Pull Request**
+
+**Code Style:**
+- Type hints обязательны
+- Docstrings для всех публичных функций
+- Тесты для новой функциональности
+- Coverage не должен падать
+
 ## Общение с системой (Stage 23)
 
 Система общается асинхронно через текстовые файлы:
@@ -323,6 +434,11 @@ digital-being/
 │       ├── phase-1-audit.md
 │       ├── phase-2-critical-fixes.md
 │       └── phase-3-code-quality.md
+├── tests/                         # 🧪 Unit tests
+│   ├── README.md                  # Testing guide
+│   ├── test_hot_reloader.py       # HotReloader tests (15+)
+│   ├── test_self_modification.py  # SelfMod tests (20+)
+│   └── conftest.py                # Shared fixtures
 ├── memory/                        # Создаётся автоматически
 │   ├── conversations.json         # Stage 23
 │   └── meta_cognition.json        # Stage 24
@@ -333,10 +449,14 @@ digital-being/
 ├── main.py                        # Точка входа
 ├── config.yaml                    # Конфигурация
 ├── seed.yaml                      # Начальные параметры
-└── requirements.txt
+├── requirements.txt               # Production deps
+├── requirements-dev.txt           # Development deps
+├── pytest.ini                     # Pytest config
+├── mypy.ini                       # MyPy config
+└── Makefile                       # Dev commands
 ```
 
-## Разработка
+## Разработка проекта
 
 Проект развивается поэтапно. **Текущая версия: Stage 24 (MetaCognition)**
 
@@ -365,7 +485,7 @@ digital-being/
 ### Роадмап рефакторинга (см. [ARCHITECTURE_MASTER.md](./docs/ARCHITECTURE_MASTER.md)):
 
 - [x] **Phase 1**: Code Audit (completed)
-- [ ] **Phase 2**: Critical Fixes (in progress)
+- [ ] **Phase 2**: Critical Fixes (in progress - 80% complete)
 - [ ] **Phase 3**: Code Quality (planned)
 - [ ] **Phase 4**: Architecture Cleanup (planned)
 - [ ] **Phase 5**: Advanced Features (planned)
@@ -378,6 +498,9 @@ digital-being/
 - ✅ **Repository Cleanup**: Удалено 11 устаревших файлов (-3570 строк)
 - ✅ **TODO_IMPROVEMENTS.md**: Новый живой roadmap проекта
 - ✅ **Documentation**: Реорганизация и актуализация документов
+- ✅ **Unit Tests**: 35+ тестов для critical modules
+- ✅ **MyPy Configuration**: Gradual typing support
+- ✅ **Development Tools**: Makefile, requirements-dev.txt
 
 ### Feb 22, 2026:
 - ✅ **Database Indexes**: 5-10x ускорение запросов
