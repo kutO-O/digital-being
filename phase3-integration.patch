@@ -1,0 +1,221 @@
+diff --git a/main.py b/main.py
+index 0acfe9b..updated 100644
+--- a/main.py
++++ b/main.py
+@@ -34,11 +34,8 @@ from core.meta_learning import MetaOptimizer
+ # Stage 26 - Skill Library
+ from core.skill_library import SkillLibrary
+ 
+-# Stage 27 - Multi-Agent Communication
+-from core.multi_agent_coordinator import MultiAgentCoordinator
+-
+-# Stage 28 - Advanced Multi-Agent
+-from core.multi_agent.task_delegation import TaskDelegation
+-from core.multi_agent.consensus_builder import ConsensusBuilder
+-from core.multi_agent.agent_roles import AgentRoleManager
++# Stage 27-28 - Multi-Agent System (Phase 3)
++from core.multi_agent_integration import MultiAgentSystem, create_multi_agent_system
++from core.multi_agent import AgentRole
+ 
+ # Stage 29 - Long-term Memory
+ from core.memory.memory_consolidation import MemoryConsolidation as LongTermMemoryConsolidation
+@@ -251,7 +248,7 @@ async def _consolidation_loop(consolidator: MemoryConsolidation, stop_event: as
+             logger.error(f"MemoryConsolidation error: {e}")
+     logger.info("MemoryConsolidation loop stopped.")
+ 
+-async def _multi_agent_loop(coordinator: MultiAgentCoordinator, stop_event: asyncio.Event, logger: logging.Logger) -> None:
++async def _multi_agent_loop(system: MultiAgentSystem, stop_event: asyncio.Event, logger: logging.Logger) -> None:
+     logger.info("🤝 Multi-Agent message polling started.")
+-    poll_interval = coordinator._config.get("message_processing", {}).get("poll_interval_sec", 2)
++    poll_interval = 2.0
++    cycle_count = 0
+     while not stop_event.is_set():
+         try:
+-            processed = await coordinator.process_messages()
+-            if processed > 0:
+-                logger.debug(f"🤝 Processed {processed} messages from network")
++            # Process one cycle
++            cycle_stats = await system.process_cycle()
++            
++            if cycle_stats.get("messages_processed", 0) > 0:
++                logger.debug(
++                    f"🤝 Cycle #{cycle_count}: "
++                    f"messages={cycle_stats['messages_processed']}, "
++                    f"tasks={cycle_stats.get('tasks_checked', 0)}"
++                )
++            
++            cycle_count += 1
++            
++            # Log stats every 30 cycles (~1 minute)
++            if cycle_count % 30 == 0:
++                stats = system.get_stats()
++                logger.info(
++                    f"📊 Multi-Agent stats: "
++                    f"messages={stats['messages_processed']}, "
++                    f"tasks={stats['tasks_executed']}, "
++                    f"errors={stats['errors']}"
++                )
++        
+         except Exception as e:
+             logger.error(f"Multi-agent polling error: {e}")
+         await asyncio.sleep(poll_interval)
+     logger.info("🤝 Multi-Agent loop stopped.")
+@@ -645,54 +658,36 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
+     else:
+         logger.info("📚 SkillLibrary disabled.")
+     
+-    # Stage 27: Multi-Agent Communication (Basic)
++    # Stage 27-28: Multi-Agent System (Phase 3)
+     multi_agent_cfg = cfg.get("multi_agent", {})
+     multi_agent_enabled = bool(multi_agent_cfg.get("enabled", False))
+-    multi_agent_coordinator = None
+-    if multi_agent_enabled and skill_library:
+-        agent_id = f"{multi_agent_cfg.get('agent_name', 'primary')}_{int(time.time())}"
+-        storage_dir = ROOT_DIR / "memory"
+-        shared_registry = Path(multi_agent_cfg.get("shared_storage", {}).get("registry_path", "memory/multi_agent/shared_registry.json"))
+-        shared_messages = Path(multi_agent_cfg.get("shared_storage", {}).get("message_storage", "memory/multi_agent/shared_messages"))
+-        if not shared_registry.is_absolute():
+-            shared_registry = ROOT_DIR / shared_registry
+-        if not shared_messages.is_absolute():
+-            shared_messages = ROOT_DIR / shared_messages
+-        shared_registry.parent.mkdir(parents=True, exist_ok=True)
+-        shared_messages.mkdir(parents=True, exist_ok=True)
++    multi_agent_system = None
++    
++    if multi_agent_enabled:
++        # Map agent name to role
++        role_map = {
++            "coordinator": AgentRole.COORDINATOR,
++            "researcher": AgentRole.RESEARCHER,
++            "executor": AgentRole.EXECUTOR,
++            "analyst": AgentRole.ANALYST,
++            "planner": AgentRole.PLANNER,
++            "tester": AgentRole.TESTER,
++        }
+         
+-        multi_agent_coordinator = MultiAgentCoordinator(
+-            agent_id=agent_id,
++        agent_role = role_map.get(
++            multi_agent_cfg.get("agent_name", "primary").lower(),
++            AgentRole.COORDINATOR
++        )
++        
++        multi_agent_system = await create_multi_agent_system(
+             agent_name=multi_agent_cfg.get("agent_name", "primary"),
+-            specialization=multi_agent_cfg.get("specialization", "general"),
+-            skill_library=skill_library,
++            role=agent_role,
+             config=multi_agent_cfg,
+-            storage_dir=storage_dir,
++            storage_dir=ROOT_DIR / "memory",
+         )
+-        ma_stats = multi_agent_coordinator.get_stats()
+-        logger.info(f"🤝 MultiAgentCoordinator ready. agent_id={agent_id[:20]}... online_agents={ma_stats['registry']['online_agents']}")
+         
+-        # ========== Stage 28: Advanced Multi-Agent ==========
+-        task_delegation = TaskDelegation(
+-            agent_id=agent_id,
+-            message_broker=multi_agent_coordinator._broker,
+-            state_path=storage_dir / "multi_agent" / f"task_delegation_{agent_id}.json"
+-        )
+-        consensus_builder = ConsensusBuilder(
+-            agent_id=agent_id,
+-            message_broker=multi_agent_coordinator._broker,
+-            state_path=storage_dir / "multi_agent" / f"consensus_{agent_id}.json"
+-        )
+-        agent_roles = AgentRoleManager(
+-            agent_id=agent_id,
+-            state_path=storage_dir / "multi_agent" / f"agent_roles_{agent_id}.json"
+-        )
+-        
+-        multi_agent_coordinator._task_delegation = task_delegation
+-        multi_agent_coordinator._consensus_builder = consensus_builder
+-        multi_agent_coordinator._role_manager = agent_roles
+-        
+-        agent_roles.assign_role(
+-            role="coordinator" if "coordinator" in multi_agent_cfg.get("agent_name", "").lower() else "specialist"
+-        )
+-        
+-        td_stats = task_delegation.get_stats()
+-        cb_stats = consensus_builder.get_stats()
+-        ar_stats = agent_roles.get_all_stats()
+-        
+-        logger.info(f"⚙️  TaskDelegation ready. created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
+-        logger.info(f"🗳️  ConsensusBuilder ready. proposals={cb_stats['proposals_created']} votes={cb_stats['votes_cast']} decisions={cb_stats['decisions_made']}")
+-        logger.info(f"🎭 AgentRoles ready. (stats not yet implemented)")
+-        
+-    elif multi_agent_enabled and not skill_library:
+-        logger.warning("🤝 MultiAgent requires SkillLibrary. Enable skills to use multi-agent features.")
++        if multi_agent_system:
++            ma_stats = multi_agent_system.get_stats()
++            logger.info(f"🤝 MultiAgentSystem ready: {ma_stats['agent_name']} ({ma_stats['role']})")
++            logger.info(f"   🤖 AgentRegistry: {ma_stats['registry']['online_agents']} agents online")
++            logger.info(f"   📋 TaskCoordinator: {ma_stats['task_coordinator']['active_tasks']} active")
++            logger.info(f"   🗳️  ConsensusVoting: {ma_stats['consensus_voting']['active_proposals']} proposals")
++            logger.info(f"   🎓 Specialization: {ma_stats['specialization']['total_skills']} skills")
++            logger.info(f"   🧠 DistMemory: {ma_stats['distributed_memory']['total_memories']} memories")
++        else:
++            logger.error("❌ Failed to initialize MultiAgentSystem")
+     else:
+-        logger.info("🤝 MultiAgentCoordinator disabled.")
++        logger.info("🤝 MultiAgentSystem disabled")
+     
+     # ========== Stage 29: Long-term Memory ==========
+     longterm_memory_cfg = cfg.get("longterm_memory", {})
+@@ -844,7 +839,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
+         meta_optimizer=meta_optimizer,
+-        multi_agent_coordinator=multi_agent_coordinator,
++        multi_agent_coordinator=multi_agent_system,
+     )
+     logger.info("⚡ FaultTolerantHeavyTick initialized with FULL ARCHITECTURE.")
+ 
+@@ -869,7 +864,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
+         "proactive": proactive,
+         "meta_optimizer": meta_optimizer,
+         "goal_oriented": goal_oriented,
+-        "multi_agent": multi_agent_coordinator,
++        "multi_agent_system": multi_agent_system,
+         # Stage 29
+         "memory_consolidation": mem_consolidation,
+         "semantic_memory": semantic_memory,
+@@ -917,11 +912,14 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
+     logger.info(f"  🧠 Learning    : {learning_stats.get('total_patterns', 0)} patterns")
+     if skill_library:
+         logger.info(f"  📚 Skills      : {skill_stats['total_skills']} skills, {skill_stats['total_skill_uses']} uses")
+-    if multi_agent_coordinator:
+-        logger.info(f"  🤝 MultiAgent  : {ma_stats['registry']['online_agents']} agents online")
+-        if hasattr(multi_agent_coordinator, '_task_delegation'):
+-            logger.info(f"  ⚙️  Tasks       : created={td_stats['tasks_created']} completed={td_stats['tasks_completed']} pending={td_stats['pending_tasks']}")
+-            logger.info(f"  🗳️  Consensus   : proposals={cb_stats['proposals_created']} votes={cb_stats['votes_cast']} decisions={cb_stats['decisions_made']}")
++    if multi_agent_system:
++        ma_stats = multi_agent_system.get_stats()
++        logger.info(f"  🤝 MultiAgent  : {ma_stats['agent_name']} ({ma_stats['role']})")
++        logger.info(f"     Registry    : {ma_stats['registry']['online_agents']} agents")
++        logger.info(f"     Tasks       : {ma_stats['task_coordinator']['active_tasks']} active")
++        logger.info(f"     Consensus   : {ma_stats['consensus_voting']['active_proposals']} proposals")
++        logger.info(f"     Skills      : {ma_stats['specialization']['total_skills']} learned")
++        logger.info(f"     Memory      : {ma_stats['distributed_memory']['total_memories']} shared")
+     if mem_consolidation:
+         logger.info(f"  🧠 LT Memory   : {mc_stats['total_memories']} consolidated, {mc_stats['forgotten_count']} forgotten")
+         logger.info(f"  📚 Semantic    : {sm_stats['total_concepts']} concepts, {sm_stats['total_facts']} facts")
+@@ -949,7 +947,7 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
+     light_task = asyncio.create_task(ticker.start(), name="light_tick")
+     heavy_task = asyncio.create_task(heavy.start(), name="heavy_tick")
+     dream_task = asyncio.create_task(_dream_loop(dream, stop_event, logger), name="dream_loop") if dream_enabled else None
+     consolidation_task = asyncio.create_task(_consolidation_loop(consolidator, stop_event, logger), name="consolidation_loop") if (consolidation_enabled and consolidator) else None
+-    multi_agent_task = asyncio.create_task(_multi_agent_loop(multi_agent_coordinator, stop_event, logger), name="multi_agent_loop") if multi_agent_enabled and multi_agent_coordinator else None
++    multi_agent_task = asyncio.create_task(_multi_agent_loop(multi_agent_system, stop_event, logger), name="multi_agent_loop") if multi_agent_enabled and multi_agent_system else None
+     longterm_memory_task = asyncio.create_task(
+         _longterm_memory_loop(mem_consolidation, semantic_memory, mem, stop_event, logger),
+         name="longterm_memory_loop"
+@@ -1016,6 +1014,10 @@ async def async_main(cfg: dict, logger: logging.Logger) -> None:
+     if skill_library:
+         skill_library._save()
+         logger.info("✅ SkillLibrary saved")
++    
++    if multi_agent_system:
++        await multi_agent_system.shutdown()
++        logger.info("✅ MultiAgentSystem shut down")
+ 
+     mem.add_episode("system.stop", "Digital Being stopped cleanly with FULL ARCHITECTURE + HOT RELOAD", outcome="success")
+     vector_mem.close()
